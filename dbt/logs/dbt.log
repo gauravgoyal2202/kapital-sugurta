@@ -1,0 +1,31 @@
+[0m12:18:23.859701 [debug] [MainThread]: Sending event: {'category': 'dbt', 'action': 'invocation', 'label': 'start', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x7fb0e774b3a0>, <snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x7fb0e64db6d0>, <snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x7fb0e64db670>]}
+
+
+============================== 12:18:23.862817 | ec51047f-5b03-4f9a-bc10-77838bb81d50 ==============================
+[0m12:18:23.862817 [info ] [MainThread]: Running with dbt=1.11.8
+[0m12:18:23.863424 [debug] [MainThread]: running dbt with arguments {'write_json': 'True', 'log_cache_events': 'False', 'version_check': 'True', 'send_anonymous_usage_stats': 'True', 'partial_parse': 'True', 'use_experimental_parser': 'False', 'static_parser': 'True', 'indirect_selection': 'eager', 'warn_error': 'None', 'empty': 'None', 'profiles_dir': '/home/kapital/.dbt', 'log_format': 'default', 'invocation_command': 'dbt init .', 'cache_selected_only': 'False', 'log_path': 'logs', 'printer_width': '80', 'warn_error_options': 'WarnErrorOptionsV2(error=[], warn=[], silence=[])', 'use_colors': 'True', 'target_path': 'None', 'quiet': 'False', 'debug': 'False', 'no_print': 'None', 'introspect': 'True', 'fail_fast': 'False'}
+[0m12:18:23.871574 [info ] [MainThread]: Creating dbt configuration folder at /home/kapital/.dbt
+[0m12:19:01.984004 [debug] [MainThread]: Starter project path: /home/kapital/test/git-env/lib/python3.10/site-packages/dbt/include/starter_project
+[0m12:19:01.988668 [info ] [MainThread]: 
+Your new dbt project "kapital_sugurta_dbt" was created!
+
+For more information on how to configure the profiles.yml file,
+please consult the dbt documentation here:
+
+  https://docs.getdbt.com/docs/configure-your-profile
+
+One more thing:
+
+Need help? Don't hesitate to reach out to us via GitHub issues or on Slack:
+
+  https://community.getdbt.com/
+
+Happy modeling!
+
+[0m12:19:01.989238 [info ] [MainThread]: Setting up your profile.
+[0m12:21:27.431748 [info ] [MainThread]: Profile kapital_sugurta_dbt written to /home/kapital/.dbt/profiles.yml using target's profile_template.yml and your supplied values. Run 'dbt debug' to validate the connection.
+[0m12:21:27.453339 [debug] [MainThread]: Resource report: {"command_name": "init", "command_success": true, "command_wall_clock_time": 183.66487, "process_in_blocks": "40", "process_kernel_time": 0.07183, "process_mem_max_rss": "102596", "process_out_blocks": "88", "process_user_time": 1.604224}
+[0m12:21:27.454882 [debug] [MainThread]: Command `dbt init` succeeded at 12:21:27.454535 after 183.67 seconds
+[0m12:21:27.456035 [debug] [MainThread]: Sending event: {'category': 'dbt', 'action': 'invocation', 'label': 'end', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x7fb0e774b3a0>, <snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x7fb0e63e8d30>, <snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x7fb0e64daa10>]}
+[0m12:21:27.457334 [debug] [MainThread]: Flushing usage events
+[0m12:21:28.518897 [debug] [MainThread]: An error was encountered while trying to flush usage events
