@@ -18,6 +18,25 @@ seed-paths: ["seeds"]
 macro-paths: ["macros"]
 snapshot-paths: ["snapshots"]
 
+
+
+
+
+models:
+  kapital_sugurta_dbt:
+    +materialized: view   # default (we’ll override below)
+
+    curated:
+      +schema: curated
+
+    presentation:
+      +schema: presentation
+
+# 🔥 ADD THIS BLOCK (VERY IMPORTANT)
+dispatch:
+  - macro_namespace: dbt
+    search_order: ['kapital_sugurta_dbt', 'dbt']
+
 clean-targets:         # directories to be removed by `dbt clean`
   - "target"
   - "dbt_packages"
@@ -31,6 +50,10 @@ clean-targets:         # directories to be removed by `dbt clean`
 # files using the `{{ config(...) }}` macro.
 models:
   kapital_sugurta_dbt:
-    # Config indicated by + and applies to all files under models/example/
-    example:
-      +materialized: view
+
+    curated:
+      +schema: curated
+      +materialized: table
+
+    presentation:
+      +schema: presentation
