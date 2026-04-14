@@ -4,10 +4,8 @@ WITH parsed AS (
         payload_json -> 'OperationResult' AS op
     FROM {{ source('raw', 'financial_performance_api_response') }}
 )
-
 SELECT
     report_date,
-    (op ->> 'Result')::INT AS result,
-    (op ->> 'F010')::NUMERIC AS f010,
-    (op ->> 'F011')::NUMERIC AS f011
+    'Actual' as scenario,
+    (op ->> 'F320')::NUMERIC AS net_profit
 FROM parsed
