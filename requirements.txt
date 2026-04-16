@@ -1,0 +1,7 @@
+dbt-core
+dbt-postgres
+psycopg2-binary
+python-dotenv
+pandas
+oracledb
+openpyxl
