@@ -6,3 +6,5 @@ sources:
     schema: raw
     tables:
       - name: financial_performance_api_response
+      - name: balance_sheet_api_response
+      - name: investment_activity_api_response
