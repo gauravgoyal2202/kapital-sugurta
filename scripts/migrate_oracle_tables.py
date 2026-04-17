@@ -55,14 +55,16 @@ BATCH_SIZE = 10000
 def map_oracle_to_pg_type(ora_type, precision, scale):
     ora_type = ora_type.upper()
     if ora_type == 'NUMBER':
-        if scale == 0 or scale is None:
-            if precision is not None and precision < 10: 
+        if precision is None and scale is None:
+            return 'NUMERIC' # Arbitrary precision to avoid truncating decimals
+        if scale == 0 and precision is not None:
+            if precision < 10: 
                 return 'INTEGER'
-            elif precision is not None and precision <= 18: 
+            elif precision <= 18: 
                 return 'BIGINT'
             else: 
                 return 'NUMERIC'
-        return f'NUMERIC({precision or 38}, {scale or 0})'
+        return f'NUMERIC({precision or 38}, {scale if scale is not None else 0})'
     elif ora_type in ('VARCHAR2', 'CHAR', 'CLOB', 'NVARCHAR2'):
         return 'VARCHAR' if ora_type != 'CLOB' else 'TEXT'
     elif ora_type in ('DATE', 'TIMESTAMP'):
