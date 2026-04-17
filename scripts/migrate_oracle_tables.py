@@ -41,9 +41,9 @@ PG_CONFIG = (
 
 ORACLE_SCHEMA = 'KAPITALDB'
 TABLES_TO_MIGRATE = [
-    # 'ins_agent_akt',
-    # 'ins_kurs',
-    # 'ins_anketa',
+    'ins_agent_akt',
+    'ins_kurs',
+    'ins_anketa',
     'ins_polis',
     'ins_bank_client',
     'ins_kontragent',
@@ -55,9 +55,13 @@ BATCH_SIZE = 10000
 def map_oracle_to_pg_type(ora_type, precision, scale):
     ora_type = ora_type.upper()
     if ora_type == 'NUMBER':
-        if scale == 0:
-            if precision and precision < 10: return 'INTEGER'
-            else: return 'BIGINT'
+        if scale == 0 or scale is None:
+            if precision is not None and precision < 10: 
+                return 'INTEGER'
+            elif precision is not None and precision <= 18: 
+                return 'BIGINT'
+            else: 
+                return 'NUMERIC'
         return f'NUMERIC({precision or 38}, {scale or 0})'
     elif ora_type in ('VARCHAR2', 'CHAR', 'CLOB', 'NVARCHAR2'):
         return 'VARCHAR' if ora_type != 'CLOB' else 'TEXT'
@@ -181,9 +185,12 @@ def migrate_table(ora_conn, pg_conn, table_name):
         pg_conn.commit()
         logging.info(f"  Successfully {decision} {inserted} rows.")
 
-    except Exception as e:
+    except (Exception, KeyboardInterrupt) as e:
         pg_conn.rollback()
-        logging.error(f"  {table_name} FAILED: {e}")
+        logging.error(f"  {table_name} ABORTED/FAILED: {e}")
+        if isinstance(e, KeyboardInterrupt):
+            logging.warning("  Detected User Interrupt. Rolling back current table transaction...")
+            raise e # Re-raise to stop the whole script if needed
     finally:
         ora_cursor.close()
         pg_cursor.close()
