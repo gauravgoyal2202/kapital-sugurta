@@ -36,7 +36,7 @@ from psycopg2.extras import execute_values
 from dotenv import load_dotenv
 
 # ── env & logging ──────────────────────────────────────────────────────────────
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 load_dotenv(os.path.join(BASE_DIR, '.env'))
 
 os.makedirs(os.path.join(BASE_DIR, 'logs'), exist_ok=True)
@@ -55,7 +55,7 @@ PG_CONN = (
     f"host={os.getenv('PG_HOST')} port={os.getenv('PG_PORT', '5432')} "
     f"dbname={os.getenv('PG_DATABASE') or os.getenv('PG_DB', 'postgres')} "
     f"user={os.getenv('PG_USER')} "
-    f"password={os.getenv('PG_PASSWORD')}"
+    f"password='{os.getenv('PG_PASSWORD')}'"
 )
 
 # ── target schema (must match FIXED_2021_COLUMNS in the existing script) ───────

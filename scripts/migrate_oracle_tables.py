@@ -30,6 +30,7 @@ ORACLE_CONFIG = {
     'dsn': f"{os.getenv('ORACLE_HOST')}:{os.getenv('ORACLE_PORT', 1521)}/{os.getenv('ORACLE_SERVICE')}"
 }
 oracledb.init_oracle_client = None 
+oracledb.defaults.fetch_lobs = False # Force CLOB/BLOB to fetch as strings/bytes
 
 PG_CONFIG = (
     f"host={os.getenv('PG_HOST')} "
@@ -48,6 +49,14 @@ TABLES_TO_MIGRATE = [
     'ins_bank_client',
     'ins_kontragent',
     'ins_oplata',
+    'tb_anketa',
+    'tb_polis',
+    'tb_oplata',
+    'tb_avto',
+    'INS_INVDEP',
+    'P_SP_CURRENCY',
+    'INS_INVLOAN',
+    'SP_ORGTYPE'
 ]
 
 BATCH_SIZE = 10000
@@ -90,29 +99,6 @@ def get_counts(ora_cursor, pg_cursor, ora_table, pg_table):
     p_count = pg_cursor.fetchone()[0]
     return o_count, p_count
 
-def get_max_date(ora_cursor, pg_cursor, ora_table, pg_table, date_col):
-    ora_cursor.execute(f"SELECT MAX({date_col}) FROM {ORACLE_SCHEMA}.{ora_table}")
-    o_max = ora_cursor.fetchone()[0]
-    
-    pg_cursor.execute(f"SELECT MAX({date_col}) FROM raw.{pg_table}")
-    p_max = pg_cursor.fetchone()[0]
-    return o_max, p_max
-
-def get_checksum(ora_cursor, pg_cursor, ora_table, pg_table, columns):
-    # Oracle checksum (simple sum of hashes for example, or sample)
-    # Robust ORA_HASH on concatenated columns can be complex dynamically.
-    # We'll use a simplified version: hash of a sample or total count + sum of a numeric col
-    # But as per requirement: "use ORA_HASH on concatenated key columns"
-    # For dynamic logic, we'll try to find a 'ID' or 'INS_ID' column.
-    key_col = 'INS_ID' if 'ins_id' in columns else (columns[0] if columns else '1')
-    
-    ora_cursor.execute(f"SELECT SUM(ORA_HASH({key_col})) FROM {ORACLE_SCHEMA}.{ora_table}")
-    o_hash = ora_cursor.fetchone()[0]
-    
-    # PG equivalent (using hashtext or md5)
-    pg_cursor.execute(f"SELECT SUM(HASHTEXT({key_col}::text)) FROM raw.{pg_table}")
-    p_hash = pg_cursor.fetchone()[0]
-    return o_hash, p_hash
 
 def migrate_table(ora_conn, pg_conn, table_name):
     pg_table = f"{table_name}_oracle"
@@ -139,17 +125,33 @@ def migrate_table(ora_conn, pg_conn, table_name):
         o_max, p_max = None, None
 
         if exists:
+            # Guarantee the ETL columns exist on previously created tables
+            pg_cursor.execute(f"ALTER TABLE raw.{pg_table} ADD COLUMN IF NOT EXISTS etl_uploaded_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP;")
+            pg_cursor.execute(f"ALTER TABLE raw.{pg_table} ADD COLUMN IF NOT EXISTS etl_updated_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP;")
+            
             o_count, p_count = get_counts(ora_cursor, pg_cursor, table_name, pg_table)
+            
+            pg_cursor.execute(f"SELECT MAX(etl_updated_date) FROM raw.{pg_table}")
+            pg_max_etl = pg_cursor.fetchone()[0]
+            p_max = pg_max_etl
+            
             if mod_col:
-                o_max, p_max = get_max_date(ora_cursor, pg_cursor, table_name, pg_table, mod_col)
-                if o_count == p_count and o_max == p_max:
+                ora_cursor.execute(f"SELECT MAX({mod_col}) FROM {ORACLE_SCHEMA}.{table_name}")
+                o_max = ora_cursor.fetchone()[0]
+                
+                # Reload if the target table is empty or the source table has newer changes
+                if pg_max_etl is None or (o_max is not None and pg_max_etl < o_max):
+                    decision = "RELOADED"
+                else:
                     decision = "SKIPPED"
             else:
-                o_hash, p_hash = get_checksum(ora_cursor, pg_cursor, table_name, pg_table, col_names)
-                if o_count == p_count and o_hash == p_hash:
-                    decision = "SKIPPED"
-                else:
+                # Fallback: if no mod_col, check if etl_updated_date is less than 24h ago
+                from datetime import timedelta
+                timespan_threshold = datetime.now() - timedelta(days=1)
+                if pg_max_etl is None or pg_max_etl < timespan_threshold:
                     decision = "RELOADED"
+                else:
+                    decision = "SKIPPED"
             
             if decision == "SKIPPED":
                 logging.info(f"{table_name:20} | Ora: {o_count:8} | PG: {p_count:8} | MaxDate: {str(o_max):20} | Decision: {decision}")
@@ -164,24 +166,39 @@ def migrate_table(ora_conn, pg_conn, table_name):
             pg_type = map_oracle_to_pg_type(col[1], col[2], col[3])
             pg_column_defs.append(f"{col[0].lower()} {pg_type} {'NULL' if col[4]=='Y' else 'NOT NULL'}")
         
+        # Add ETL timestamp columns (etl_uploaded_date = first load, etl_updated_date = every reload)
+        pg_column_defs.append("etl_uploaded_date TIMESTAMP NULL")
+        pg_column_defs.append("etl_updated_date TIMESTAMP NULL")
+        
         pg_cursor.execute(f"CREATE SCHEMA IF NOT EXISTS raw;")
         pg_cursor.execute(f"CREATE TABLE IF NOT EXISTS raw.{pg_table} ({', '.join(pg_column_defs)})")
+        
+        # Capture the original uploaded_date before truncating (for RELOAD case)
+        original_uploaded_date = None
+        if decision == "RELOADED":
+            pg_cursor.execute(f"SELECT MIN(etl_uploaded_date) FROM raw.{pg_table}")
+            original_uploaded_date = pg_cursor.fetchone()[0]
         
         # Truncate for reload
         pg_cursor.execute(f"TRUNCATE TABLE raw.{pg_table}")
         
-        # Batch Move
+        now = datetime.now()
+        uploaded_date = original_uploaded_date if decision == "RELOADED" else now
+        
+        # Batch Move — include ETL timestamps in each row
         ora_cursor.execute(f"SELECT {', '.join(col_names)} FROM {ORACLE_SCHEMA}.{table_name}")
-        insert_sql = f"INSERT INTO raw.{pg_table} ({', '.join(col_names)}) VALUES %s"
+        insert_cols = ', '.join(col_names) + ', etl_uploaded_date, etl_updated_date'
+        insert_sql = f"INSERT INTO raw.{pg_table} ({insert_cols}) VALUES %s"
         
         inserted = 0
         while True:
             rows = ora_cursor.fetchmany(BATCH_SIZE)
             if not rows: break
-            extras.execute_values(pg_cursor, insert_sql, rows)
+            # Append ETL timestamps to each row
+            rows_with_etl = [r + (uploaded_date, now) for r in rows]
+            extras.execute_values(pg_cursor, insert_sql, rows_with_etl)
             inserted += len(rows)
-            # Log progress every batch
-            if inserted % (BATCH_SIZE * 5) == 0: # Log every 50k rows
+            if inserted % (BATCH_SIZE * 5) == 0:  # Log every 50k rows
                 logging.info(f"  ... {inserted} rows migrated so far")
         
         pg_conn.commit()
