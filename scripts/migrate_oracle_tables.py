@@ -42,13 +42,13 @@ PG_CONFIG = (
 
 ORACLE_SCHEMA = 'KAPITALDB'
 TABLES_TO_MIGRATE = [
-    'ins_agent_akt',
     'ins_kurs',
     'ins_anketa',
     'ins_polis',
     'ins_bank_client',
     'ins_kontragent',
     'ins_oplata',
+    'ins_agent_akt',
     'tb_anketa',
     'tb_polis',
     'tb_oplata',
@@ -56,7 +56,10 @@ TABLES_TO_MIGRATE = [
     'INS_INVDEP',
     'P_SP_CURRENCY',
     'INS_INVLOAN',
-    'SP_ORGTYPE'
+    'SP_ORGTYPE',
+    'INS_INVLOAN_OPLATA',
+    'INS_INVLOAN_ACCRUAL',
+    'TB_USERS'
 ]
 
 BATCH_SIZE = 10000
@@ -101,7 +104,8 @@ def get_counts(ora_cursor, pg_cursor, ora_table, pg_table):
 
 
 def migrate_table(ora_conn, pg_conn, table_name):
-    pg_table = f"{table_name}_oracle"
+    # PostgreSQL stores unquoted identifiers in lowercase
+    pg_table = f"{table_name}_oracle".lower()
     ora_cursor = ora_conn.cursor()
     pg_cursor = pg_conn.cursor()
     
@@ -126,26 +130,26 @@ def migrate_table(ora_conn, pg_conn, table_name):
 
         if exists:
             # Guarantee the ETL columns exist on previously created tables
-            pg_cursor.execute(f"ALTER TABLE raw.{pg_table} ADD COLUMN IF NOT EXISTS etl_uploaded_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP;")
-            pg_cursor.execute(f"ALTER TABLE raw.{pg_table} ADD COLUMN IF NOT EXISTS etl_updated_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP;")
-            
-            o_count, p_count = get_counts(ora_cursor, pg_cursor, table_name, pg_table)
-            
-            pg_cursor.execute(f"SELECT MAX(etl_updated_date) FROM raw.{pg_table}")
-            pg_max_etl = pg_cursor.fetchone()[0]
+            pg_cursor.execute(f"ALTER TABLE raw.{pg_table} ADD COLUMN IF NOT EXISTS etl_uploaded_date TIMESTAMP;")
+            pg_cursor.execute(f"ALTER TABLE raw.{pg_table} ADD COLUMN IF NOT EXISTS etl_updated_date TIMESTAMP;")
+            pg_cursor.execute(f"SELECT COUNT(*), MAX(etl_updated_date) FROM raw.{pg_table}")
+            _res = pg_cursor.fetchone()
+            p_count = _res[0]
+            pg_max_etl = _res[1]
             p_max = pg_max_etl
             
             if mod_col:
+                # Fast — Oracle MAX on an indexed date column is cheap
                 ora_cursor.execute(f"SELECT MAX({mod_col}) FROM {ORACLE_SCHEMA}.{table_name}")
                 o_max = ora_cursor.fetchone()[0]
                 
-                # Reload if the target table is empty or the source table has newer changes
+                # Reload if never loaded or source has newer data
                 if pg_max_etl is None or (o_max is not None and pg_max_etl < o_max):
                     decision = "RELOADED"
                 else:
                     decision = "SKIPPED"
             else:
-                # Fallback: if no mod_col, check if etl_updated_date is less than 24h ago
+                # Fallback: skip if etl_updated_date was set within last 24h
                 from datetime import timedelta
                 timespan_threshold = datetime.now() - timedelta(days=1)
                 if pg_max_etl is None or pg_max_etl < timespan_threshold:
@@ -154,11 +158,11 @@ def migrate_table(ora_conn, pg_conn, table_name):
                     decision = "SKIPPED"
             
             if decision == "SKIPPED":
-                logging.info(f"{table_name:20} | Ora: {o_count:8} | PG: {p_count:8} | MaxDate: {str(o_max):20} | Decision: {decision}")
+                logging.info(f"{table_name:25} | PG:{p_count:9} | Ora MaxDate: {str(o_max):<24} | ETL Updated: {str(p_max):<24} | {decision}")
                 return
 
         # 3. Perform Migration (RELOAD or CREATE)
-        logging.info(f"{table_name:20} | Ora: {o_count:8} | PG: {p_count:8} | MaxDate: {str(o_max):20} | Decision: {decision}")
+        logging.info(f"{table_name:25} | PG:{p_count:9} | Ora MaxDate: {str(o_max):<24} | ETL Updated: {str(p_max):<24} | {decision}")
         
         # Create table if not exists
         pg_column_defs = []
@@ -215,16 +219,20 @@ def migrate_table(ora_conn, pg_conn, table_name):
         pg_cursor.close()
 
 if __name__ == '__main__':
-    logging.info(f"{'Table':20} | {'Ora Count':8} | {'PG Count':8} | {'Max Date/Checksum':20} | {'Decision'}")
-    logging.info("-" * 80)
+    logging.info(f"{'Table':<25} | {'PG Rows':>9} | {'Ora MaxDate':<36} | {'ETL Updated':<24} | Decision")
+    logging.info("-" * 115)
+    ora, pg = None, None
     try:
         ora = oracledb.connect(**ORACLE_CONFIG)
         pg = psycopg2.connect(PG_CONFIG)
         for t in TABLES_TO_MIGRATE:
             migrate_table(ora, pg, t)
-        ora.close(); pg.close()
     except Exception as e:
         logging.error(f"Migration error: {e}")
+    finally:
+        if ora: ora.close()
+        if pg: pg.close()
+        logging.info("Connections closed successfully.")
 
     """
 CONVERTED POSTGRESQL QUERY:
