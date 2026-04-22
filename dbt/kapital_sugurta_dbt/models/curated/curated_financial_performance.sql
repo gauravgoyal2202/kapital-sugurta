@@ -1,7 +1,7 @@
 WITH parsed AS (
     SELECT
         report_date,
-        payload_json -> 'OperationResult' AS op
+        payload_json -> 'OperationResult' AS ext
     FROM {{ source('raw', 'financial_performance_api_response') }}
 )
 
@@ -9,52 +9,59 @@ SELECT
     report_date,
     'Actual' as scenario,
 
-    -- =========================
-    -- CORE FINANCIALS
-    -- =========================
-    (op ->> 'F010')::NUMERIC AS total_income,
-    (op ->> 'F011')::NUMERIC AS total_expense,
-    (op ->> 'F012')::NUMERIC AS gross_profit,
-    (op ->> 'F013')::NUMERIC AS other_income,
-
-    (op ->> 'F060')::NUMERIC AS total_revenue,
-    (op ->> 'F070')::NUMERIC AS total_costs,
-
-    (op ->> 'F110')::NUMERIC AS operating_income,
-    (op ->> 'F120')::NUMERIC AS operating_expense,
-
-    (op ->> 'F140')::NUMERIC AS financial_income,
-    (op ->> 'F160')::NUMERIC AS financial_expense,
-
-    -- =========================
-    -- PROFIT (IMPORTANT)
-    -- =========================
-    (op ->> 'F320')::NUMERIC AS net_profit,
-
-    -- =========================
-    -- INSURANCE-SPECIFIC SPLIT
-    -- =========================
-    -- P = Profit side
-    -- L = Loss side
-    -- =========================
-
-    (op ->> 'F080P')::NUMERIC AS premium_income,
-    (op ->> 'F080L')::NUMERIC AS premium_loss,
-
-    (op ->> 'F150P')::NUMERIC AS claims_paid,
-    (op ->> 'F150L')::NUMERIC AS claims_loss,
-
-    (op ->> 'F270P')::NUMERIC AS underwriting_profit,
-    (op ->> 'F270L')::NUMERIC AS underwriting_loss,
-
-    (op ->> 'F290P')::NUMERIC AS technical_result,
-    (op ->> 'F290L')::NUMERIC AS technical_loss,
-
-    -- =========================
-    -- ADDITIONAL METRICS
-    -- =========================
-    (op ->> 'F200')::NUMERIC AS tax_expense,
-    (op ->> 'F220')::NUMERIC AS other_expense,
-    (op ->> 'F250')::NUMERIC AS administrative_costs
-
-FROM parsed    
+    (ext ->> 'F010')::NUMERIC AS total_revenue,
+    (ext ->> 'F011')::NUMERIC AS premium_income,
+    (ext ->> 'F012')::NUMERIC AS reinsurance_premium_ceded,
+    (ext ->> 'F013')::NUMERIC AS other_premium_income,
+    (ext ->> 'F020')::NUMERIC AS commission_income,
+    (ext ->> 'F030')::NUMERIC AS fee_income,
+    (ext ->> 'F040')::NUMERIC AS subrogation_income,
+    (ext ->> 'F050')::NUMERIC AS other_operating_income,
+    (ext ->> 'F060')::NUMERIC AS operating_income,
+    (ext ->> 'F070')::NUMERIC AS costs_of_goods_sold,
+    (ext ->> 'F090')::NUMERIC AS period_expenses,
+    (ext ->> 'F100')::NUMERIC AS commission_expenses,
+    (ext ->> 'F110')::NUMERIC AS standard_operating_income,
+    (ext ->> 'F120')::NUMERIC AS standard_operating_expense,
+    (ext ->> 'F130')::NUMERIC AS interest_income,
+    (ext ->> 'F140')::NUMERIC AS financial_income,
+    (ext ->> 'F160')::NUMERIC AS financial_expense,
+    (ext ->> 'F170')::NUMERIC AS foreign_exchange_gains,
+    (ext ->> 'F180')::NUMERIC AS dividend_income,
+    (ext ->> 'F190')::NUMERIC AS realization_of_investments_gains,
+    (ext ->> 'F200')::NUMERIC AS revaluation_of_investments,
+    (ext ->> 'F210')::NUMERIC AS other_financial_income,
+    (ext ->> 'F220')::NUMERIC AS foreign_exchange_losses,
+    (ext ->> 'F230')::NUMERIC AS realization_of_investments_losses,
+    (ext ->> 'F240')::NUMERIC AS other_financial_expenses,
+    (ext ->> 'F250')::NUMERIC AS administrative_costs,
+    (ext ->> 'F260')::NUMERIC AS marketing_expenses,
+    (ext ->> 'F300')::NUMERIC AS extraordinary_income,
+    (ext ->> 'F310')::NUMERIC AS extraordinary_expenses,
+    (ext ->> 'F320')::NUMERIC AS net_profit,
+    (ext ->> 'F014L')::NUMERIC AS life_insurance_premium,
+    (ext ->> 'F014P')::NUMERIC AS property_insurance_premium,
+    (ext ->> 'F015L')::NUMERIC AS health_insurance_premium,
+    (ext ->> 'F015P')::NUMERIC AS liability_insurance_premium,
+    (ext ->> 'F016L')::NUMERIC AS personal_accident_premium,
+    (ext ->> 'F016P')::NUMERIC AS motor_insurance_premium,
+    (ext ->> 'F017L')::NUMERIC AS travel_insurance_premium,
+    (ext ->> 'F017P')::NUMERIC AS marine_aviation_transit_premium,
+    (ext ->> 'F018L')::NUMERIC AS credit_surety_premium,
+    (ext ->> 'F018P')::NUMERIC AS legal_expenses_premium,
+    (ext ->> 'F019L')::NUMERIC AS assistance_premium,
+    (ext ->> 'F019P')::NUMERIC AS miscellaneous_financial_loss_premium,
+    (ext ->> 'F080L')::NUMERIC AS life_premium_loss,
+    (ext ->> 'F080P')::NUMERIC AS property_premium_income,
+    (ext ->> 'F150L')::NUMERIC AS life_claims_loss,
+    (ext ->> 'F150P')::NUMERIC AS property_claims_paid,
+    (ext ->> 'F270L')::NUMERIC AS life_underwriting_loss,
+    (ext ->> 'F270P')::NUMERIC AS property_underwriting_profit,
+    (ext ->> 'F280L')::NUMERIC AS life_investment_income,
+    (ext ->> 'F280P')::NUMERIC AS property_investment_income,
+    (ext ->> 'F290L')::NUMERIC AS life_technical_loss,
+    (ext ->> 'F290P')::NUMERIC AS property_technical_result,
+    (ext ->> 'Result')::NUMERIC AS total_financial_result,
+    CURRENT_TIMESTAMP AS loaded_at,
+    CURRENT_TIMESTAMP AS updated_at
+FROM parsed

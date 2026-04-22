@@ -8,3 +8,34 @@ sources:
       - name: financial_performance_api_response
       - name: balance_sheet_api_response
       - name: investment_activity_api_response
+      - name: claims_portfolio
+      - name: reinsurance_incoming_portfolio
+      - name: reinsurance_outgoing_portfolio
+      - name: solvency_adequacy
+      - name: ins_invdep_oracle
+      - name: ins_invloan_oracle
+      - name: p_sp_currency_oracle
+      - name: ins_oplata_oracle
+      - name: ins_anketa_oracle
+      - name: ins_polis_oracle
+      - name: ins_bank_client_oracle
+      - name: ins_agent_akt_oracle
+      - name: ins_kontragent_oracle
+      - name: tb_anketa_oracle
+      - name: tb_polis_oracle
+      - name: tb_oplata_oracle
+      - name: tb_avto_oracle
+      - name: ins_rastorg_oracle
+      - name: ins_regress_oracle
+      - name: ins_regress_bank_oracle
+      - name: ins_headbanks_oracle
+      - name: ins_pturi_oracle
+      - name: ins_vertical_oracle
+      - name: ins_pgroup1_oracle
+      - name: ins_pgroup2_oracle
+      - name: ins_pgroup3_oracle
+      - name: ins_groups_oracle
+      - name: ins_fifty_oracle
+      - name: market_share_insurance_class_stats
+      - name: ins_viplati_oracle
+      - name: ins_sobitie_oracle

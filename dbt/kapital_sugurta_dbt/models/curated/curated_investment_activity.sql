@@ -1,6 +1,6 @@
 WITH source AS (
     SELECT
-        report_date,
+        NULLIF(TRIM(report_date::text), '')::DATE AS report_date,
         payload_json -> 'OperationResult' AS op
     FROM {{ source('raw', 'investment_activity_api_response') }}
 ),
@@ -14,9 +14,14 @@ bonds AS (
         'BOND' AS investment_type,
         b->>'partner' AS partner_name,
         b->>'contract' AS contract,
-        (b->>'amount')::NUMERIC AS amount
+        NULLIF(b->>'amount', '')::NUMERIC AS amount
     FROM source,
-    LATERAL jsonb_array_elements(op -> 'Bonds') AS b
+    LATERAL jsonb_array_elements(
+        CASE 
+            WHEN jsonb_typeof(op -> 'Bonds') = 'array' THEN op -> 'Bonds' 
+            ELSE '[]'::jsonb 
+        END
+    ) AS b
 ),
 
 -- =========================
@@ -28,9 +33,14 @@ deposits AS (
         'DEPOSIT' AS investment_type,
         d->>'partner' AS partner_name,
         d->>'contract' AS contract,
-        (d->>'amount')::NUMERIC AS amount
+        NULLIF(d->>'amount', '')::NUMERIC AS amount
     FROM source,
-    LATERAL jsonb_array_elements(op -> 'Deposits') AS d
+    LATERAL jsonb_array_elements(
+        CASE 
+            WHEN jsonb_typeof(op -> 'Deposits') = 'array' THEN op -> 'Deposits' 
+            ELSE '[]'::jsonb 
+        END
+    ) AS d
 ),
 
 -- =========================
@@ -42,9 +52,14 @@ fx_deposits AS (
         'FX_DEPOSIT' AS investment_type,
         f->>'partner' AS partner_name,
         f->>'contract' AS contract,
-        (f->>'amount')::NUMERIC AS amount
+        NULLIF(f->>'amount', '')::NUMERIC AS amount
     FROM source,
-    LATERAL jsonb_array_elements(op -> 'ForeignCurrencyDeposits') AS f
+    LATERAL jsonb_array_elements(
+        CASE 
+            WHEN jsonb_typeof(op -> 'ForeignCurrencyDeposits') = 'array' THEN op -> 'ForeignCurrencyDeposits' 
+            ELSE '[]'::jsonb 
+        END
+    ) AS f
 ),
 
 -- =========================
@@ -56,8 +71,9 @@ loans AS (
         'LOAN' AS investment_type,
         NULL AS partner_name,
         NULL AS contract,
-        (op ->> 'Loans')::NUMERIC AS amount
+        NULLIF(op ->> 'Loans', '')::NUMERIC AS amount
     FROM source
+    WHERE NULLIF(op ->> 'Loans', '') IS NOT NULL
 ),
 
 -- =========================
@@ -69,19 +85,20 @@ shares AS (
         'SHARE' AS investment_type,
         NULL AS partner_name,
         NULL AS contract,
-        (op ->> 'Shares')::NUMERIC AS amount
+        NULLIF(op ->> 'Shares', '')::NUMERIC AS amount
     FROM source
+    WHERE NULLIF(op ->> 'Shares', '') IS NOT NULL
 )
 
 -- =========================
 -- FINAL UNION
 -- =========================
-SELECT *,'Actual' as scenario FROM bonds
+SELECT *, 'Actual' AS scenario, CURRENT_TIMESTAMP AS loaded_at, CURRENT_TIMESTAMP AS updated_at FROM bonds
 UNION ALL
-SELECT *,'Actual' as scenario  FROM deposits
+SELECT *, 'Actual' AS scenario, CURRENT_TIMESTAMP AS loaded_at, CURRENT_TIMESTAMP AS updated_at FROM deposits
 UNION ALL
-SELECT *,'Actual' as scenario FROM fx_deposits
+SELECT *, 'Actual' AS scenario, CURRENT_TIMESTAMP AS loaded_at, CURRENT_TIMESTAMP AS updated_at FROM fx_deposits
 UNION ALL
-SELECT *,'Actual' as scenario FROM loans
+SELECT *, 'Actual' AS scenario, CURRENT_TIMESTAMP AS loaded_at, CURRENT_TIMESTAMP AS updated_at FROM loans
 UNION ALL
-SELECT *,'Actual' as scenario FROM shares
+SELECT *, 'Actual' AS scenario, CURRENT_TIMESTAMP AS loaded_at, CURRENT_TIMESTAMP AS updated_at FROM shares

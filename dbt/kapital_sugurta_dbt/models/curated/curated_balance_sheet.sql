@@ -1,7 +1,7 @@
 WITH parsed AS (
     SELECT
         report_date,
-        payload_json -> 'OperationResult' -> 'Balance' AS bal
+        payload_json -> 'OperationResult' -> 'Balance' AS ext
     FROM {{ source('raw', 'balance_sheet_api_response') }}
 )
 
@@ -9,73 +9,134 @@ SELECT
     report_date,
     'Actual' as scenario,
 
-    -- =========================
-    -- ASSETS (A codes)
-    -- =========================
-    (bal ->> 'A010')::NUMERIC AS total_assets,
-    (bal ->> 'A011')::NUMERIC AS current_assets,
-    (bal ->> 'A012')::NUMERIC AS non_current_assets,
-
-    (bal ->> 'A020')::NUMERIC AS cash_and_equivalents,
-    (bal ->> 'A021')::NUMERIC AS cash,
-    (bal ->> 'A022')::NUMERIC AS bank_accounts,
-
-    (bal ->> 'A030')::NUMERIC AS investments,
-    (bal ->> 'A040')::NUMERIC AS financial_assets,
-
-    (bal ->> 'A100')::NUMERIC AS receivables,
-
-    (bal ->> 'A130')::NUMERIC AS total_assets_check,
-
-    (bal ->> 'A190')::NUMERIC AS total_assets_alt,
-    (bal ->> 'A200')::NUMERIC AS current_assets_total,
-
-    (bal ->> 'A240')::NUMERIC AS loans_issued,
-    (bal ->> 'A250')::NUMERIC AS long_term_investments,
-
-    (bal ->> 'A380')::NUMERIC AS reserves_assets,
-    (bal ->> 'A390')::NUMERIC AS accumulated_assets,
-
-    (bal ->> 'A430')::NUMERIC AS fixed_assets,
-
-    (bal ->> 'A460')::NUMERIC AS total_operating_assets,
-
-    (bal ->> 'A480')::NUMERIC AS total_balance_assets,
-    (bal ->> 'A490')::NUMERIC AS total_assets_final,
-
-    -- =========================
-    -- LIABILITIES (P codes)
-    -- =========================
-    (bal ->> 'P500')::NUMERIC AS share_capital,
-    (bal ->> 'P510')::NUMERIC AS additional_capital,
-
-    (bal ->> 'P520')::NUMERIC AS retained_earnings_prev,
-
-    (bal ->> 'P570')::NUMERIC AS equity,
-    (bal ->> 'P580')::NUMERIC AS total_equity,
-
-    (bal ->> 'P590')::NUMERIC AS total_liabilities_equity,
-
-    (bal ->> 'P600')::NUMERIC AS reserves,
-
-    (bal ->> 'P630')::NUMERIC AS accounts_payable,
-
-    (bal ->> 'P670')::NUMERIC AS total_liabilities,
-
-    (bal ->> 'P680')::NUMERIC AS short_term_liabilities,
-
-    (bal ->> 'P700')::NUMERIC AS long_term_liabilities,
-
-    (bal ->> 'P720')::NUMERIC AS retained_earnings,
-
-    (bal ->> 'P900')::NUMERIC AS profit_loss,
-
-    (bal ->> 'P930')::NUMERIC AS equity_total_check,
-    (bal ->> 'P931')::NUMERIC AS equity_subtotal,
-
-    (bal ->> 'P950')::NUMERIC AS reserves_additional,
-    (bal ->> 'P1000')::NUMERIC AS capital_total,
-    (bal ->> 'P1090')::NUMERIC AS liabilities_total_alt,
-    (bal ->> 'P1190')::NUMERIC AS total_equity_final,
-    (bal ->> 'P1200')::NUMERIC AS total_balance_liabilities
+    (ext ->> 'A010')::NUMERIC AS total_assets_at_start,
+    (ext ->> 'A011')::NUMERIC AS long_term_assets,
+    (ext ->> 'A012')::NUMERIC AS current_assets,
+    (ext ->> 'A020')::NUMERIC AS cash_and_equivalents,
+    (ext ->> 'A021')::NUMERIC AS cash,
+    (ext ->> 'A022')::NUMERIC AS bank_accounts,
+    (ext ->> 'A030')::NUMERIC AS short_term_investments,
+    (ext ->> 'A040')::NUMERIC AS financial_assets,
+    (ext ->> 'A050')::NUMERIC AS intangible_assets,
+    (ext ->> 'A060')::NUMERIC AS reinsurance_receivables,
+    (ext ->> 'A070')::NUMERIC AS coinsurance_receivables,
+    (ext ->> 'A080')::NUMERIC AS premium_receivables,
+    (ext ->> 'A090')::NUMERIC AS commission_receivables,
+    (ext ->> 'A100')::NUMERIC AS total_receivables,
+    (ext ->> 'A110')::NUMERIC AS prepayments,
+    (ext ->> 'A120')::NUMERIC AS deferred_expenses,
+    (ext ->> 'A130')::NUMERIC AS total_assets_check,
+    (ext ->> 'A140')::NUMERIC AS deferred_tax_assets,
+    (ext ->> 'A150')::NUMERIC AS inventory,
+    (ext ->> 'A160')::NUMERIC AS other_current_assets_one,
+    (ext ->> 'A170')::NUMERIC AS other_current_assets_two,
+    (ext ->> 'A180')::NUMERIC AS other_current_assets_three,
+    (ext ->> 'A190')::NUMERIC AS total_assets_alt,
+    (ext ->> 'A191')::NUMERIC AS additional_current_assets,
+    (ext ->> 'A200')::NUMERIC AS current_assets_subtotal,
+    (ext ->> 'A210')::NUMERIC AS long_term_receivables,
+    (ext ->> 'A220')::NUMERIC AS long_term_intragroup_receivables,
+    (ext ->> 'A230')::NUMERIC AS long_term_advances,
+    (ext ->> 'A240')::NUMERIC AS loans_issued,
+    (ext ->> 'A250')::NUMERIC AS long_term_investments,
+    (ext ->> 'A260')::NUMERIC AS investments_in_subsidiaries,
+    (ext ->> 'A270')::NUMERIC AS investments_in_associates,
+    (ext ->> 'A280')::NUMERIC AS real_estate_investments,
+    (ext ->> 'A290')::NUMERIC AS other_long_term_investments,
+    (ext ->> 'A300')::NUMERIC AS equipment,
+    (ext ->> 'A310')::NUMERIC AS accumulated_depreciation,
+    (ext ->> 'A320')::NUMERIC AS intangible_assets_net,
+    (ext ->> 'A330')::NUMERIC AS accumulated_amortization,
+    (ext ->> 'A340')::NUMERIC AS capital_investments,
+    (ext ->> 'A350')::NUMERIC AS advances_for_fixed_assets,
+    (ext ->> 'A360')::NUMERIC AS long_term_deferred_expenses,
+    (ext ->> 'A370')::NUMERIC AS deferred_tax_assets_long_term,
+    (ext ->> 'A380')::NUMERIC AS insurance_reserves_assets,
+    (ext ->> 'A390')::NUMERIC AS accumulated_assets,
+    (ext ->> 'A400')::NUMERIC AS other_long_term_assets_one,
+    (ext ->> 'A410')::NUMERIC AS other_long_term_assets_two,
+    (ext ->> 'A420')::NUMERIC AS other_long_term_assets_three,
+    (ext ->> 'A430')::NUMERIC AS fixed_assets,
+    (ext ->> 'A440')::NUMERIC AS lease_assets,
+    (ext ->> 'A450')::NUMERIC AS contingent_assets,
+    (ext ->> 'A460')::NUMERIC AS operating_assets,
+    (ext ->> 'A470')::NUMERIC AS off_balance_sheet_assets,
+    (ext ->> 'A480')::NUMERIC AS total_balance_assets,
+    (ext ->> 'A490')::NUMERIC AS total_assets_final,
+    (ext ->> 'P500')::NUMERIC AS authorized_capital,
+    (ext ->> 'P510')::NUMERIC AS additional_capital,
+    (ext ->> 'P520')::NUMERIC AS reserve_capital,
+    (ext ->> 'P530')::NUMERIC AS treasury_shares,
+    (ext ->> 'P540')::NUMERIC AS retained_earnings_prior_years,
+    (ext ->> 'P550')::NUMERIC AS share_premium,
+    (ext ->> 'P560')::NUMERIC AS other_reserves,
+    (ext ->> 'P570')::NUMERIC AS equity,
+    (ext ->> 'P580')::NUMERIC AS total_equity_reserves,
+    (ext ->> 'P590')::NUMERIC AS unearned_premium_reserve,
+    (ext ->> 'P600')::NUMERIC AS ibnr_reserve,
+    (ext ->> 'P610')::NUMERIC AS rbns_reserve,
+    (ext ->> 'P620')::NUMERIC AS matemathical_reserve,
+    (ext ->> 'P630')::NUMERIC AS stabilization_reserve_base,
+    (ext ->> 'P640')::NUMERIC AS unexpired_risk_reserve,
+    (ext ->> 'P650')::NUMERIC AS stabilization_reserve_additional,
+    (ext ->> 'P660')::NUMERIC AS claims_equalization_reserve,
+    (ext ->> 'P670')::NUMERIC AS total_liabilities,
+    (ext ->> 'P680')::NUMERIC AS current_liabilities,
+    (ext ->> 'P690')::NUMERIC AS short_term_loans,
+    (ext ->> 'P700')::NUMERIC AS long_term_liabilities,
+    (ext ->> 'P710')::NUMERIC AS short_term_payables,
+    (ext ->> 'P720')::NUMERIC AS retained_earnings,
+    (ext ->> 'P730')::NUMERIC AS payables_to_reinsurers,
+    (ext ->> 'P731')::NUMERIC AS payables_to_coinsurers,
+    (ext ->> 'P740')::NUMERIC AS commission_payables,
+    (ext ->> 'P750')::NUMERIC AS tax_payables,
+    (ext ->> 'P760')::NUMERIC AS social_security_payables,
+    (ext ->> 'P770')::NUMERIC AS salary_payables,
+    (ext ->> 'P780')::NUMERIC AS dividends_payable,
+    (ext ->> 'P790')::NUMERIC AS advances_received,
+    (ext ->> 'P800')::NUMERIC AS deferred_income,
+    (ext ->> 'P810')::NUMERIC AS provisions_for_liabilities,
+    (ext ->> 'P820')::NUMERIC AS other_short_term_liabilities_one,
+    (ext ->> 'P830')::NUMERIC AS other_short_term_liabilities_two,
+    (ext ->> 'P840')::NUMERIC AS other_short_term_liabilities_three,
+    (ext ->> 'P850')::NUMERIC AS other_short_term_liabilities_four,
+    (ext ->> 'P860')::NUMERIC AS other_short_term_liabilities_five,
+    (ext ->> 'P870')::NUMERIC AS other_short_term_liabilities_six,
+    (ext ->> 'P880')::NUMERIC AS other_short_term_liabilities_seven,
+    (ext ->> 'P890')::NUMERIC AS other_short_term_liabilities_eight,
+    (ext ->> 'P900')::NUMERIC AS net_profit_loss,
+    (ext ->> 'P910')::NUMERIC AS non_controlling_interest,
+    (ext ->> 'P920')::NUMERIC AS minority_interest,
+    (ext ->> 'P930')::NUMERIC AS equity_check,
+    (ext ->> 'P931')::NUMERIC AS equity_reserve_subtotal,
+    (ext ->> 'P932')::NUMERIC AS equity_adjustment,
+    (ext ->> 'P940')::NUMERIC AS additional_equity_reserves,
+    (ext ->> 'P950')::NUMERIC AS additional_reserves,
+    (ext ->> 'P960')::NUMERIC AS pension_obligations,
+    (ext ->> 'P970')::NUMERIC AS deferred_tax_liabilities,
+    (ext ->> 'P980')::NUMERIC AS other_long_term_liabilities_one,
+    (ext ->> 'P990')::NUMERIC AS other_long_term_liabilities_two,
+    (ext ->> 'P1000')::NUMERIC AS total_capital,
+    (ext ->> 'P1010')::NUMERIC AS long_term_loans,
+    (ext ->> 'P1020')::NUMERIC AS long_term_advances_received,
+    (ext ->> 'P1030')::NUMERIC AS long_term_provisions,
+    (ext ->> 'P1040')::NUMERIC AS lease_liabilities,
+    (ext ->> 'P1050')::NUMERIC AS other_non_current_liabilities_one,
+    (ext ->> 'P1060')::NUMERIC AS other_non_current_liabilities_two,
+    (ext ->> 'P1070')::NUMERIC AS other_non_current_liabilities_three,
+    (ext ->> 'P1080')::NUMERIC AS other_non_current_liabilities_four,
+    (ext ->> 'P1090')::NUMERIC AS total_liabilities_alt,
+    (ext ->> 'P1100')::NUMERIC AS off_balance_sheet_liabilities,
+    (ext ->> 'P1110')::NUMERIC AS contingent_liabilities,
+    (ext ->> 'P1120')::NUMERIC AS unearned_premiums_ceded,
+    (ext ->> 'P1130')::NUMERIC AS claims_reserve_ceded,
+    (ext ->> 'P1140')::NUMERIC AS ibnr_reserve_ceded,
+    (ext ->> 'P1150')::NUMERIC AS rbns_reserve_ceded,
+    (ext ->> 'P1160')::NUMERIC AS mathematical_reserve_ceded,
+    (ext ->> 'P1170')::NUMERIC AS other_reserves_ceded,
+    (ext ->> 'P1180')::NUMERIC AS total_ceded_reserves,
+    (ext ->> 'P1190')::NUMERIC AS total_equity_final,
+    (ext ->> 'P1200')::NUMERIC AS total_liabilities_and_equity,
+    CURRENT_TIMESTAMP AS loaded_at,
+    CURRENT_TIMESTAMP AS updated_at
 FROM parsed

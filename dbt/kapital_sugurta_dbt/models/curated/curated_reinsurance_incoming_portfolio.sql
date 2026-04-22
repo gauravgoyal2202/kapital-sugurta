@@ -1,0 +1,37 @@
+WITH source_data AS (
+    SELECT * FROM {{ source('raw', 'reinsurance_incoming_portfolio') }}
+)
+SELECT
+    id,
+    TRIM(seq_number) AS seq_number,
+    TRIM(contract_number) AS contract_number,
+    TRIM(policyholder) AS policyholder,
+    TRIM(insurance_type) AS insurance_type,
+    TRIM(voluntary_insurance_type) AS voluntary_insurance_type,
+    TRIM(mandatory_insurance_type) AS mandatory_insurance_type,
+    TRIM(region) AS region,
+    TRIM(policyholder_country) AS policyholder_country,
+    TRIM(city_village) AS city_village,
+    TRIM(individual_legal_entity) AS individual_legal_entity,
+    contract_conclusion_date,
+    insured_amount_contract,
+    TRIM(contract_currency) AS contract_currency,
+    insurance_premium_contract,
+    TRIM(premium_currency_contract) AS premium_currency_contract,
+    contract_start_date,
+    contract_end_date,
+    insured_amount_policy,
+    insured_amount_policy_usd,
+    insurance_premium_policy,
+    TRIM(premium_currency_policy) AS premium_currency_policy,
+    actual_premium_usd,
+    actual_premium_eur,
+    actual_premium_rub,
+    actual_premium_uzs,
+    TRIM(premium_currency_policy2) AS premium_currency_policy2,
+    total_accrued_premium_uzs,
+    TRIM(branch) AS branch,
+    'Actual' AS scenario,
+    CURRENT_TIMESTAMP AS loaded_at,
+    CURRENT_TIMESTAMP AS updated_at
+FROM source_data
