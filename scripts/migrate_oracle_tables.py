@@ -149,6 +149,18 @@ def migrate_table(ora_conn, pg_conn, table_name):
             # Guarantee the ETL columns exist on previously created tables
             pg_cursor.execute(f"ALTER TABLE raw.{pg_table} ADD COLUMN IF NOT EXISTS etl_uploaded_date TIMESTAMP;")
             pg_cursor.execute(f"ALTER TABLE raw.{pg_table} ADD COLUMN IF NOT EXISTS etl_updated_date TIMESTAMP;")
+            
+            # Synchronize columns: Add any columns that exist in Oracle but not in PostgreSQL
+            pg_cursor.execute("SELECT column_name FROM information_schema.columns WHERE table_schema='raw' AND table_name=%s", (pg_table,))
+            pg_cols = {row[0].lower() for row in pg_cursor.fetchall()}
+            for col in columns_meta:
+                col_name = col[0].lower()
+                if col_name not in pg_cols:
+                    pg_type = map_oracle_to_pg_type(col[1], col[2], col[3])
+                    nullable = 'NULL' if col[4]=='Y' else 'NOT NULL'
+                    pg_cursor.execute(f"ALTER TABLE raw.{pg_table} ADD COLUMN {col_name} {pg_type} {nullable}")
+                    logging.info(f"  Added missing column {col_name} to raw.{pg_table}")
+
             pg_cursor.execute(f"SELECT COUNT(*), MAX(etl_updated_date) FROM raw.{pg_table}")
             _res = pg_cursor.fetchone()
             p_count = _res[0]
