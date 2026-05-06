@@ -1,7 +1,10 @@
-dbt-core
-dbt-postgres
-psycopg2-binary
-python-dotenv
-pandas
+requests
 oracledb
+SQLAlchemy
+psycopg2
+psycopg2-binary
+pandas
 openpyxl
+dbt-postgres
+great_expectations
+python-dotenv
