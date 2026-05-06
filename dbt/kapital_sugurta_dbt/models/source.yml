@@ -39,3 +39,7 @@ sources:
       - name: market_share_insurance_class_stats
       - name: ins_viplati_oracle
       - name: ins_sobitie_oracle
+      - name: tb_users_oracle
+      - name: sp_division_oracle
+      - name: nps_survey_responses
+      - name: ins_employee_oracle

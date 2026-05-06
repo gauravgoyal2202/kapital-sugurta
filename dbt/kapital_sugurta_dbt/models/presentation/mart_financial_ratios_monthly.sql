@@ -43,7 +43,7 @@ balance_sheet_monthly AS (
     GROUP BY 1, 2
 ),
 
-financial_perf_monthly AS (
+financial_perf_monthly_base AS (
     SELECT
         DATE_TRUNC('month', report_date)::DATE AS report_month,
         scenario,
@@ -55,6 +55,18 @@ financial_perf_monthly AS (
     FROM {{ ref('curated_financial_performance') }}
     WHERE report_date IS NOT NULL
     GROUP BY 1, 2
+),
+
+financial_perf_monthly AS (
+    SELECT
+        report_month,
+        scenario,
+        premium_f011 - COALESCE(LAG(premium_f011) OVER (PARTITION BY scenario, EXTRACT(year FROM report_month) ORDER BY report_month), 0) AS premium_f011,
+        premium_f013 - COALESCE(LAG(premium_f013) OVER (PARTITION BY scenario, EXTRACT(year FROM report_month) ORDER BY report_month), 0) AS premium_f013,
+        reinsurance_f012 - COALESCE(LAG(reinsurance_f012) OVER (PARTITION BY scenario, EXTRACT(year FROM report_month) ORDER BY report_month), 0) AS reinsurance_f012,
+        expenses_f070 - COALESCE(LAG(expenses_f070) OVER (PARTITION BY scenario, EXTRACT(year FROM report_month) ORDER BY report_month), 0) AS expenses_f070,
+        expenses_f090 - COALESCE(LAG(expenses_f090) OVER (PARTITION BY scenario, EXTRACT(year FROM report_month) ORDER BY report_month), 0) AS expenses_f090
+    FROM financial_perf_monthly_base
 ),
 
 -- Constructing a master timeline explicitly representing all valid months across facts

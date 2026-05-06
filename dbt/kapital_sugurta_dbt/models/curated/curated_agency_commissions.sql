@@ -4,6 +4,7 @@ WITH general_commissions AS (
     -- Handles standard voluntary commissions combining logic from both client constraints
     SELECT 
         o.ins_id AS transaction_id,
+        o.anketa_id,  -- Explicitly passing anketa_id for bank linkage
         akt.akt_date::DATE AS commission_date,
         
         CASE
@@ -15,12 +16,16 @@ WITH general_commissions AS (
         a.fizyur AS entity_type_flag,
         
         -- Joining partner name dynamically using the policy owner and Kontragent dictionary
-        COALESCE(NULLIF(TRIM(k.tb_orgname), ''), NULLIF(TRIM(k.tb_name), ''), 'Direct/No Partner') AS bank_partner_name
+        COALESCE(NULLIF(TRIM(k.tb_orgname), ''), NULLIF(TRIM(k.tb_name), ''), 'Direct/No Partner') AS bank_partner_name,
+        
+        -- Pulling the mapped priority area for granular product category tabs
+        COALESCE(m.priority_area, 'Other') AS product_category
 
     FROM {{ source('raw', 'ins_oplata_oracle') }} o
     LEFT JOIN {{ source('raw', 'ins_anketa_oracle') }} a ON a.ins_id = o.anketa_id
     LEFT JOIN {{ source('raw', 'ins_kontragent_oracle') }} k ON k.tb_id = a.owner
     INNER JOIN {{ source('raw', 'ins_agent_akt_oracle') }} akt ON akt.ins_id = o.akt
+    LEFT JOIN {{ ref('curated_priority_area_mapping') }} m ON a.ins_type = m.pturi_id
     
     WHERE akt.active = 2
       -- Validates policy structural constraints dynamically
@@ -35,6 +40,7 @@ osago_commissions AS (
     -- OSAGO (Mandatory Auto) exact mathematical mapping 
     SELECT
         o.tb_id AS transaction_id,
+        t.tb_id AS anketa_id,  -- Explicitly passing anketa_id for bank linkage
         akt.akt_date::DATE AS commission_date,
         
         -- tb_summa * tb_komissia % dynamically 
@@ -43,7 +49,10 @@ osago_commissions AS (
         t.tb_fizur AS entity_type_flag,
         
         -- Joining exactly like General Commissions using the explicit policy master tb_user mapping
-        COALESCE(NULLIF(TRIM(k.tb_orgname), ''), NULLIF(TRIM(k.tb_name), ''), 'Direct/No Partner') AS bank_partner_name
+        COALESCE(NULLIF(TRIM(k.tb_orgname), ''), NULLIF(TRIM(k.tb_name), ''), 'Direct/No Partner') AS bank_partner_name,
+        
+        -- OSAGO is always Motor product category
+        'Motor' AS product_category
 
     FROM {{ source('raw', 'tb_anketa_oracle') }} t
     INNER JOIN {{ source('raw', 'tb_polis_oracle') }} p ON t.tb_id = p.tb_anketa
