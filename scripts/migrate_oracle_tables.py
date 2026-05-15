@@ -42,24 +42,41 @@ PG_CONFIG = (
 
 ORACLE_SCHEMA = 'KAPITALDB'
 TABLES_TO_MIGRATE = [
-    'ins_kurs',
+    'INS_REGRESS',
+    'INS_REGRESS_BANK',
+    'INS_HEADBANKS',
+    'INS_RASTORG',
     'ins_anketa',
     'ins_polis',
     'ins_bank_client',
     'ins_kontragent',
     'ins_oplata',
-    'ins_agent_akt',
     'tb_anketa',
     'tb_polis',
     'tb_oplata',
     'tb_avto',
+    'ins_agent_akt',
+    'ins_kurs',
     'INS_INVDEP',
     'P_SP_CURRENCY',
     'INS_INVLOAN',
     'SP_ORGTYPE',
     'INS_INVLOAN_OPLATA',
     'INS_INVLOAN_ACCRUAL',
-    'TB_USERS'
+    'TB_USERS',
+    'INS_PTURI',
+    'INS_SOBITIE',
+    'INS_VIPLATI',
+    'INS_EMPLOYEE',
+    'ins_reinsurance',  
+    'sp_reinsurance_form',
+    'sp_reinsurance_type',
+    'sp_reinsurance_brokers',
+    'ins_reins_contract',
+    'sp_division',
+    'sp_reinsurance_org',
+    'sp_reinsurance_foreign_org',
+    'sp_country'
 ]
 
 BATCH_SIZE = 10000
@@ -117,8 +134,8 @@ def migrate_table(ora_conn, pg_conn, table_name):
             return
         
         col_names = [c[0].lower() for c in columns_meta]
-        date_cols = [c[0] for c in columns_meta if 'DATE' in c[1].upper() or 'TIMESTAMP' in c[1].upper()]
-        mod_col = next((c for c in col_names if 'modified' in c or 'updated' in c), None)
+        date_cols = [c[0].lower() for c in columns_meta if 'DATE' in c[1].upper() or 'TIMESTAMP' in c[1].upper()]
+        mod_col = next((c for c in date_cols if 'modified' in c or 'updated' in c), None)
 
         # 2. Check existence and validation
         pg_cursor.execute("SELECT exists(select from information_schema.tables where table_schema='raw' and table_name=%s)", (pg_table,))
@@ -132,6 +149,18 @@ def migrate_table(ora_conn, pg_conn, table_name):
             # Guarantee the ETL columns exist on previously created tables
             pg_cursor.execute(f"ALTER TABLE raw.{pg_table} ADD COLUMN IF NOT EXISTS etl_uploaded_date TIMESTAMP;")
             pg_cursor.execute(f"ALTER TABLE raw.{pg_table} ADD COLUMN IF NOT EXISTS etl_updated_date TIMESTAMP;")
+            
+            # Synchronize columns: Add any columns that exist in Oracle but not in PostgreSQL
+            pg_cursor.execute("SELECT column_name FROM information_schema.columns WHERE table_schema='raw' AND table_name=%s", (pg_table,))
+            pg_cols = {row[0].lower() for row in pg_cursor.fetchall()}
+            for col in columns_meta:
+                col_name = col[0].lower()
+                if col_name not in pg_cols:
+                    pg_type = map_oracle_to_pg_type(col[1], col[2], col[3])
+                    nullable = 'NULL' if col[4]=='Y' else 'NOT NULL'
+                    pg_cursor.execute(f"ALTER TABLE raw.{pg_table} ADD COLUMN {col_name} {pg_type} {nullable}")
+                    logging.info(f"  Added missing column {col_name} to raw.{pg_table}")
+
             pg_cursor.execute(f"SELECT COUNT(*), MAX(etl_updated_date) FROM raw.{pg_table}")
             _res = pg_cursor.fetchone()
             p_count = _res[0]
