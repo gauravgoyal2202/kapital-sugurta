@@ -43,3 +43,12 @@ sources:
       - name: sp_division_oracle
       - name: nps_survey_responses
       - name: ins_employee_oracle
+      - name: ins_department_oracle
+      - name: ins_loss_oracle
+      - name: ins_kurs_oracle
+      - name: oracle_reinsurance_combined
+      - name: ins_reinsurance_oracle
+      - name: ins_reins_contract_oracle
+      - name: sp_reinsurance_form_oracle
+      - name: sp_reinsurance_type_oracle
+      - name: sp_reinsurance_brokers_oracle

@@ -21,13 +21,18 @@ months AS (
 active_deposits AS (
     SELECT 
         m.report_month,
-        SUM(c.deposit_amount) AS total_deposits
+        SUM(
+            CASE 
+                WHEN c.val_type = 2 THEN c.deposit_amount * k.kurs_usd
+                ELSE c.deposit_amount
+            END
+        ) AS total_deposits
     FROM months m
     LEFT JOIN {{ ref('curated_oracle_deposits') }} c
-        -- Active logic: Deposit was opened on or before the end of this month
         ON c.deposit_start_date <= m.report_month
-        -- And was active through this month (closure is null or after this month)
         AND (c.deposit_end_date IS NULL OR c.deposit_end_date > m.report_month)
+    LEFT JOIN {{ source('raw', 'ins_kurs_oracle') }} k
+        ON k.kurs_date::DATE = m.report_month
     GROUP BY 1
 ),
 
@@ -38,7 +43,7 @@ active_loans AS (
     FROM months m
     LEFT JOIN {{ ref('curated_oracle_loans') }} c
         ON c.loan_start_date <= m.report_month
-        AND (c.loan_end_date IS NULL OR c.loan_end_date > m.report_month)
+        AND (c.loan_end_date_actual IS NULL OR c.loan_end_date_actual >= m.report_month)
     GROUP BY 1
 ),
 
@@ -98,7 +103,23 @@ SELECT
     CASE 
         WHEN SUM(COALESCE(i.total_income, 0)) OVER (PARTITION BY u.report_month) = 0 THEN 0
         ELSE (COALESCE(i.total_income, 0) / SUM(COALESCE(i.total_income, 0)) OVER (PARTITION BY u.report_month)) * 100.0
-    END AS total_investment_income_category_pct
+    END AS total_investment_income_category_pct,
+
+    -- SNAPSHOT HELPERS (To prevent incorrect summing in Power BI)
+    CASE 
+        WHEN EXTRACT(MONTH FROM u.report_month) = 12 THEN TRUE 
+        ELSE FALSE 
+    END AS is_last_month_of_year,
+    
+    CASE 
+        WHEN EXTRACT(MONTH FROM u.report_month) IN (3, 6, 9, 12) THEN TRUE 
+        ELSE FALSE 
+    END AS is_last_month_of_quarter,
+
+    CASE 
+        WHEN u.report_month = MAX(u.report_month) OVER() THEN TRUE 
+        ELSE FALSE 
+    END AS is_latest_data_month
 
 FROM unnested_structure u
 LEFT JOIN income_aggregated i

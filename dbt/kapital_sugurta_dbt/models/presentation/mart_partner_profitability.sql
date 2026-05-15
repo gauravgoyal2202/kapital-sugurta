@@ -46,7 +46,8 @@ SELECT
         WHEN premium_uzs > 0 
         THEN ROUND(((premium_uzs - commission_uzs - claims_uzs - reinsurance_uzs) / premium_uzs * 100)::NUMERIC, 2)
         ELSE 0 
-    END as profitability_pct
+    END as profitability_pct,
+    'Actual' as scenario
 
 FROM monthly_partner_agg
 ORDER BY report_month DESC, premium_uzs DESC

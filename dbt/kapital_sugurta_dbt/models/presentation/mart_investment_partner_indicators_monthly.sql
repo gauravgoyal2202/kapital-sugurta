@@ -24,11 +24,18 @@ oracle_active_deposits AS (
         m.report_month,
         'Deposits' AS portfolio_category,
         c.partner_name,
-        SUM(c.deposit_amount) AS portfolio_amount
+        SUM(
+            CASE 
+                WHEN c.val_type = 2 THEN c.deposit_amount * k.kurs_usd
+                ELSE c.deposit_amount
+            END
+        ) AS portfolio_amount
     FROM months m
     LEFT JOIN {{ ref('curated_oracle_deposits') }} c
         ON c.deposit_start_date <= m.report_month
         AND (c.deposit_end_date IS NULL OR c.deposit_end_date > m.report_month)
+    LEFT JOIN {{ source('raw', 'ins_kurs_oracle') }} k
+        ON k.kurs_date::DATE = m.report_month
     WHERE c.partner_name IS NOT NULL
     GROUP BY 1, 2, 3
 ),
@@ -42,7 +49,7 @@ oracle_active_loans AS (
     FROM months m
     LEFT JOIN {{ ref('curated_oracle_loans') }} c
         ON c.loan_start_date <= m.report_month
-        AND (c.loan_end_date IS NULL OR c.loan_end_date > m.report_month)
+        AND (c.loan_end_date_actual IS NULL OR c.loan_end_date_actual >= m.report_month)
     WHERE c.client_name IS NOT NULL
     GROUP BY 1, 2, 3
 ),
@@ -81,7 +88,23 @@ SELECT
     s.portfolio_category,
     s.partner_name,
     COALESCE(p.portfolio_amount, 0) AS portfolio_amount_uzs,
-    COALESCE(i.income_amount, 0) AS income_amount_uzs
+    COALESCE(i.income_amount, 0) AS income_amount_uzs,
+
+    -- SNAPSHOT HELPERS (To prevent incorrect summing in Power BI)
+    CASE 
+        WHEN EXTRACT(MONTH FROM s.report_month) = 12 THEN TRUE 
+        ELSE FALSE 
+    END AS is_last_month_of_year,
+    
+    CASE 
+        WHEN EXTRACT(MONTH FROM s.report_month) IN (3, 6, 9, 12) THEN TRUE 
+        ELSE FALSE 
+    END AS is_last_month_of_quarter,
+
+    CASE 
+        WHEN s.report_month = MAX(s.report_month) OVER() THEN TRUE 
+        ELSE FALSE 
+    END AS is_latest_data_month
 
 FROM partner_spine s
 LEFT JOIN portfolio_combined p 

@@ -5,6 +5,7 @@ WITH source_data AS (
         d.dep_sum,
         d.depdate_from,
         d.depdate_to,
+        d.val_type,
         "raw".kontragent_name(d.client_id) AS partner_name,
         CASE 
             WHEN d.val_type = 2 THEN 'Foreign Currency Deposits'
@@ -17,6 +18,7 @@ WITH source_data AS (
 
 SELECT 
     deposit_type,
+    val_type,
     partner_name,
     dep_sum AS deposit_amount,
     depdate_from AS deposit_start_date,

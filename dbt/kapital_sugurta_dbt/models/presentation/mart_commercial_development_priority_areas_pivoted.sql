@@ -35,7 +35,9 @@ pivoted AS (
         MAX(CASE WHEN priority_area = 'Property' THEN company_market_share_pct END) as property_market_share_pct,
         
         -- Market Reference (Year-specific)
-        MAX(CASE WHEN report_year = 2024 THEN mkt_prem_2024_bn ELSE mkt_prem_2025_bn END) as mkt_premium_bn
+        MAX(CASE WHEN report_year = 2024 THEN mkt_prem_prev_year_bn ELSE mkt_prem_curr_year_bn END) as mkt_premium_bn,
+        
+        'Actual' as scenario
         
     FROM base
     GROUP BY 1, 2

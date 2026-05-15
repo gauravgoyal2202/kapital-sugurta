@@ -12,13 +12,14 @@ WITH all_recoveries AS (
 
 exact_recoveries AS (
     -- Isolate strictly verified paths linked deeply through the registry
+    -- Aggregating to transaction_id level to prevent duplication (fan-out) in the final join
     SELECT 
         b.ins_id AS transaction_id,
-        p.tb_anketa AS anketa_id, -- Explicitly passing anketa_id for bank linkage
-        COALESCE(h.ins_name1, k.tb_name, 'Direct/No Partner') AS bank_partner_name,
-        COALESCE(m.priority_area, 'Other') AS product_category,
+        MAX(p.tb_anketa) AS anketa_id, -- Representative anketa ID
+        MAX(COALESCE(h.ins_name1, k.tb_name, 'Direct/No Partner')) AS bank_partner_name,
+        MAX(COALESCE(m.priority_area, 'Other')) AS product_category,
         COALESCE(SUM(rb.recovery_sum), 0)::NUMERIC AS exact_recovery_amount,
-        a.fizyur,
+        MAX(a.fizyur) AS fizyur,
         
         -- Calculate processing time: Delta between subrogation debt creation and the actual payment
         AVG(EXTRACT(EPOCH FROM (b.pym_date - r.create_date)) / 86400)::NUMERIC AS recovery_processing_time_days
@@ -32,7 +33,7 @@ exact_recoveries AS (
     LEFT JOIN {{ source('raw', 'ins_headbanks_oracle') }} h ON k.head_id = h.ins_id
     LEFT JOIN {{ ref('curated_priority_area_mapping') }} m ON a.ins_type = m.pturi_id
     WHERE b.bc_type = 2
-    GROUP BY 1, 2, 3, 4, a.fizyur
+    GROUP BY 1
 )
 
 SELECT 

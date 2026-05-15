@@ -63,7 +63,8 @@ final AS (
         CASE 
             WHEN t.total_company_premium_uzs > 0 THEN (m.premium_uzs / t.total_company_premium_uzs) * 100 
             ELSE 0 
-        END as premium_share_pct
+        END as premium_share_pct,
+        'Actual' as scenario
     FROM monthly_agg m
     JOIN total_monthly t 
         ON t.report_month = m.report_month

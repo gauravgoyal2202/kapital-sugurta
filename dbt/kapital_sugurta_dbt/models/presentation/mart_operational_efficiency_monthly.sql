@@ -16,7 +16,8 @@ SELECT
 
     -- Intermediate components
     COALESCE(operating_expenses_f090, 0) AS operating_expenses_sum,
-    COALESCE(operating_income_f060, 0) + COALESCE(financial_income_f140, 0) AS operating_income_sum,
+    -- COALESCE(operating_income_f060, 0) + COALESCE(financial_income_f140, 0) AS operating_income_sum,
+    COALESCE(financial_income_f140, 0) AS operating_income_sum,
 
     -- Final KPI: CIR %
     -- Formula: Operating Expenses (F090) / Operating Income (F060 + F140)

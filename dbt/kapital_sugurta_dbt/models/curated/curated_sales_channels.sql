@@ -28,6 +28,13 @@ enriched AS (
         COALESCE(v.name3, 'Other') as product_category,
         COALESCE(pt.polis_name, 'Other') as product_name,
         CASE WHEN pb.user_id IN (19202, 19588, 20322, 40791) THEN 'Yes' ELSE 'No' END AS is_anor_bank,
+        TRIM(COALESCE(u.tb_surname, '')) || ' ' || TRIM(COALESCE(u.tb_name, '')) as agent_name,
+        CASE 
+            WHEN akt.akt_type = 0 THEN 'Individual Agent'
+            WHEN akt.akt_type = 1 THEN 'Bank'
+            WHEN akt.akt_type = 2 THEN 'Legal Entity Agent'
+            ELSE 'Branch/Own'
+        END as agent_type,
 
         -- SALES CHANNEL CLASSIFICATION
         CASE
@@ -52,6 +59,7 @@ enriched AS (
 
 SELECT
     payment_date,
+    anketa_id, -- Added for joining
     sales_channel,
     CASE
         WHEN sales_channel IN ('Banks', 'API Partner', 'Marketplace') THEN 'Partner Channels'
@@ -62,6 +70,8 @@ SELECT
     product_category,
     product_name,
     is_anor_bank,
+    agent_name,
+    agent_type,
     premium_amount,
     commission_amount
 FROM enriched

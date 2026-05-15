@@ -17,7 +17,8 @@ WITH monthly_settlement AS (
         ROUND(AVG(settlement_days)::NUMERIC, 2) as avg_settlement_days,
         ROUND(MIN(settlement_days)::NUMERIC, 2) as min_settlement_days,
         ROUND(MAX(settlement_days)::NUMERIC, 2) as max_settlement_days,
-        COUNT(claim_event_id) as total_claims_settled
+        COUNT(claim_event_id) as total_claims_settled,
+        'Actual' as scenario
     FROM {{ ref('curated_claims_settlement') }}
     GROUP BY 1, 2, 3, 4, 5, 6
 )

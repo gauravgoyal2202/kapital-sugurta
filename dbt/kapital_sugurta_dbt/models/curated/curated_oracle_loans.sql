@@ -16,7 +16,8 @@ WITH source_data AS (
         "raw".f_ins_valtype(i.val_vozvrat) AS val_vozvrat_desc,
         "raw".f_ins_realloan(i.ins_id) AS postup,
         "raw".f_ins_viplloan(i.ins_id) AS kvipl,
-        i.status
+        i.status,
+        i.close_date
     FROM {{ source('raw', 'ins_invloan_oracle') }} i
 )
 
@@ -46,6 +47,7 @@ SELECT
         WHEN status = 2 THEN 'Досрочное погашение'
         ELSE ''
     END AS loan_status,
+    close_date AS loan_end_date_actual,
     'Actual' AS scenario,
     CURRENT_TIMESTAMP AS updated_at
 FROM source_data

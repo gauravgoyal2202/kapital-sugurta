@@ -1,37 +1,79 @@
-WITH source_data AS (
+WITH excel_source AS (
     SELECT * FROM {{ source('raw', 'reinsurance_incoming_portfolio') }}
+    WHERE EXTRACT(YEAR FROM contract_conclusion_date) < 2026
+),
+
+oracle_source AS (
+    SELECT
+        r.id AS reinsurance_id,
+        r.direction,
+        r.contract_number AS slip_contract_number,
+        r.contract_issue_date AS slip_contract_issue_date,
+        r.slip_date, -- Added missing column
+        r.reinsurance_start_date,
+        r.reinsurance_end_date,
+        r.reinsurer_is_foreign,
+        r.brutto_ins_premium,
+        r.exchange_rate,
+        r.commission,
+        r.netto_ins_premium,
+        r.brutto_accrual_premium,
+        r.netto_accrual_premium, -- Added for validation
+        
+        c.insurance_product_name,
+        c.insurant_name,
+        c.classes AS insurance_classes,
+        c.insurance_sum,
+        c.contract_number,
+        c.contract_issue_date,
+        
+        div.sp_name1 AS division_name,
+        frm.name AS reinsurance_form_name,
+        typ.name AS reinsurance_type_name,
+        brk.name AS broker_name,
+        cur.sp_name1 AS currency_name
+        
+    FROM {{ source('raw', 'ins_reinsurance_oracle') }} r
+    LEFT JOIN {{ source('raw', 'ins_reins_contract_oracle') }} c ON c.reinsurance_id = r.id
+    LEFT JOIN {{ source('raw', 'sp_division_oracle') }} div ON div.sp_id = r.division_id
+    LEFT JOIN {{ source('raw', 'sp_reinsurance_form_oracle') }} frm ON frm.id = r.reinsurance_form_id
+    LEFT JOIN {{ source('raw', 'sp_reinsurance_type_oracle') }} typ ON typ.id = r.reinsurance_type_id
+    LEFT JOIN {{ source('raw', 'sp_reinsurance_brokers_oracle') }} brk ON brk.id = r.broker_id
+    LEFT JOIN {{ source('raw', 'p_sp_currency_oracle') }} cur ON cur.sp_id = r.currency_id
+    WHERE r.direction IN (2, 3) -- Incoming (Foreign/Local)
+      AND EXTRACT(YEAR FROM r.slip_date) >= 2026
+),
+
+combined AS (
+    -- 1. Historical Excel Data
+    SELECT
+        id::TEXT,
+        policyholder,
+        insurance_type,
+        voluntary_insurance_type,
+        mandatory_insurance_type,
+        contract_conclusion_date,
+        total_accrued_premium_uzs,
+        'Excel' AS source_system
+    FROM excel_source
+
+    UNION ALL
+
+    -- 2. New Oracle Data
+    SELECT
+        reinsurance_id::TEXT,
+        insurant_name,
+        insurance_product_name,
+        insurance_classes,
+        'N/A', -- Category split
+        slip_date AS contract_conclusion_date,
+        COALESCE(netto_accrual_premium, 0) AS total_accrued_premium_uzs,
+        'Oracle' AS source_system
+    FROM oracle_source
 )
+
 SELECT
-    id,
-    TRIM(seq_number) AS seq_number,
-    TRIM(contract_number) AS contract_number,
-    TRIM(policyholder) AS policyholder,
-    TRIM(insurance_type) AS insurance_type,
-    TRIM(voluntary_insurance_type) AS voluntary_insurance_type,
-    TRIM(mandatory_insurance_type) AS mandatory_insurance_type,
-    TRIM(region) AS region,
-    TRIM(policyholder_country) AS policyholder_country,
-    TRIM(city_village) AS city_village,
-    TRIM(individual_legal_entity) AS individual_legal_entity,
-    contract_conclusion_date,
-    insured_amount_contract,
-    TRIM(contract_currency) AS contract_currency,
-    insurance_premium_contract,
-    TRIM(premium_currency_contract) AS premium_currency_contract,
-    contract_start_date,
-    contract_end_date,
-    insured_amount_policy,
-    insured_amount_policy_usd,
-    insurance_premium_policy,
-    TRIM(premium_currency_policy) AS premium_currency_policy,
-    actual_premium_usd,
-    actual_premium_eur,
-    actual_premium_rub,
-    actual_premium_uzs,
-    TRIM(premium_currency_policy2) AS premium_currency_policy2,
-    total_accrued_premium_uzs,
-    TRIM(branch) AS branch,
+    *,
     'Actual' AS scenario,
-    CURRENT_TIMESTAMP AS loaded_at,
-    CURRENT_TIMESTAMP AS updated_at
-FROM source_data
+    CURRENT_TIMESTAMP AS loaded_at
+FROM combined

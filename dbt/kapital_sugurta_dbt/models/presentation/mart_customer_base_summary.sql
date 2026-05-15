@@ -1,44 +1,67 @@
 {{ config(materialized='table') }}
 
 /*
-  Dashboard 16 — Aggregated Customer Base Summary
-  ------------------------------------------------
-  Final summary dashboard table aggregating the retention spine 
-  into historical time-series metrics.
+  Dashboard 16 — Aggregated Customer Base Summary (Optimized with NPS)
+  -----------------------------------------------------------
+  Updated to align with client logic and include NPS metrics.
 */
 
 WITH spine AS (
     SELECT * FROM {{ ref('mart_customer_retention_spine') }}
+),
+
+nps_data AS (
+    SELECT
+        DATE_TRUNC('month', response_timestamp)::DATE as report_month,
+        COUNT(*) as total_responses,
+        SUM(CASE WHEN nps_category = 'Promoter' THEN 1 ELSE 0 END) as promoters,
+        SUM(CASE WHEN nps_category = 'Detractor' THEN 1 ELSE 0 END) as detractors
+    FROM {{ ref('curated_nps_survey') }}
+    WHERE survey_type = 'General NPS'
+    GROUP BY 1
+),
+
+metrics AS (
+    SELECT
+        report_month,
+        report_month AS month,
+        TO_CHAR(report_month, 'Month') AS month_name,
+        EXTRACT(YEAR FROM report_month) AS report_year,
+        EXTRACT(QUARTER FROM report_month) AS report_quarter,
+        
+        COALESCE(legal_form, 'Unknown') AS legal_form,
+        COALESCE(customer_segment, 'Unknown') AS customer_segment,
+        COALESCE(oked_industry_code, 'Unknown') AS oked_industry_code,
+        COALESCE(region_code, 'Unknown') AS region_code,
+        
+        'Actual' AS scenario,
+        
+        -- Line 89: Active Customers
+        SUM(is_active_curr) AS active_customers,
+        
+        -- Line 91: Policies per Customer
+        SUM(active_policy_count) AS total_active_policies,
+        ROUND(SUM(active_policy_count)::NUMERIC / NULLIF(SUM(is_active_curr), 0), 4) AS avg_policies_per_customer,
+        
+        -- Line 90: Retention Rate Components
+        SUM(is_retained) AS retained_customers,
+        SUM(is_retained) AS retained_customers_from_prev_month, -- Alias for backward compatibility
+        SUM(was_active_prev) AS customers_at_start_of_period,
+        
+        ROUND((SUM(is_retained)::NUMERIC / NULLIF(SUM(was_active_prev), 0)) * 100, 2) AS retention_rate_pct
+        
+    FROM spine
+    GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9
 )
 
 SELECT
-    report_month,
-    EXTRACT(YEAR FROM report_month) AS report_year,
-    EXTRACT(QUARTER FROM report_month) AS report_quarter,
-    
-    legal_form,
-    customer_segment,
-    oked_industry_code,
-    region_code,
-    
-    -- Scenario flag matching dashboard Plan/Fact/Previous Year legend
-    'Actual' AS scenario,
-    
-    -- Top Metric #1: Active Customers
-    COUNT(DISTINCT customer_id) AS active_customers,
-    
-    -- Sub-Metric: Raw Policies Active 
-    SUM(active_policy_count) AS total_active_policies,
-    
-    -- Top Metric #2: Average Policies Per Customer
-    ROUND((SUM(active_policy_count)::NUMERIC / NULLIF(COUNT(DISTINCT customer_id), 0)), 2) AS avg_policies_per_customer,
-    
-    -- Top Metric #3: Retention Rate components
-    SUM(is_retained) AS retained_customers_from_prev_month
-    
-    -- NOTE: In Power BI, True Retention Rate % = 
-    -- ( SUM(retained_customers_from_prev_month) / CALCULATE(SUM(active_customers), PREVIOUSMONTH(report_month)) ) * 100
-    
-FROM spine
-GROUP BY 1, 2, 3, 4, 5, 6, 7
-ORDER BY report_month DESC
+    m.*,
+    COALESCE(n.total_responses, 0) as nps_total_responses,
+    CASE 
+        WHEN n.total_responses > 0 
+        THEN ROUND(((n.promoters - n.detractors)::NUMERIC / n.total_responses) * 100, 1)
+        ELSE 0 
+    END as nps_index
+FROM metrics m
+LEFT JOIN nps_data n ON m.report_month = n.report_month
+ORDER BY m.report_month DESC

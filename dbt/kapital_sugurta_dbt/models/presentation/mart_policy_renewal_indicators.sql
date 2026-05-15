@@ -34,6 +34,7 @@ SELECT
         WHEN total_expiring_policies > 0 
         THEN ROUND((total_renewed_policies::NUMERIC / total_expiring_policies::NUMERIC) * 100, 2)
         ELSE 0 
-    END as renewal_rate_pct
+    END as renewal_rate_pct,
+    'Actual' as scenario
 FROM monthly_renewals
 ORDER BY report_month DESC

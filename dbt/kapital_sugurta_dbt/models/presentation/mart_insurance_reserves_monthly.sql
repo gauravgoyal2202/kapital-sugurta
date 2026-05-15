@@ -1,6 +1,6 @@
 WITH monthly_bs AS (
     SELECT
-        DATE_TRUNC('month', report_date) AS report_month,
+        DATE_TRUNC('month', report_date)::DATE AS report_month,
         scenario,
         SUM(unearned_premium_reserve) AS upr,
         SUM(ibnr_reserve) AS ibnr,
@@ -12,16 +12,44 @@ WITH monthly_bs AS (
     FROM {{ ref('curated_balance_sheet') }}
     WHERE report_date IS NOT NULL
     GROUP BY 1, 2
+),
+
+period_flags AS (
+    SELECT
+        report_month,
+        scenario,
+        upr,
+        ibnr,
+        rbns,
+        stabilization_reserve_base,
+        stabilization_reserve_additional,
+        total_assets,
+        total_reserves_denominator,
+        CASE WHEN report_month = MAX(report_month) OVER (PARTITION BY scenario, EXTRACT(year FROM report_month), EXTRACT(quarter FROM report_month)) THEN 1 ELSE 0 END AS is_qtr_end,
+        CASE WHEN report_month = MAX(report_month) OVER (PARTITION BY scenario, EXTRACT(year FROM report_month)) THEN 1 ELSE 0 END AS is_year_end
+    FROM monthly_bs
 )
 
 SELECT
     report_month,
     scenario,
     
-    -- Core KPIs
+    -- Core KPIs (Monthly Snapshot)
     upr,
     ibnr,
     rbns,
+    
+    -- Quarterly Aggregation Helpers (Only populated on the last available month of the quarter)
+    -- Power BI can SUM these safely at the quarter level
+    CASE WHEN is_qtr_end = 1 THEN upr ELSE 0 END AS upr_qtr,
+    CASE WHEN is_qtr_end = 1 THEN ibnr ELSE 0 END AS ibnr_qtr,
+    CASE WHEN is_qtr_end = 1 THEN rbns ELSE 0 END AS rbns_qtr,
+
+    -- Yearly Aggregation Helpers (Only populated on the last available month of the year)
+    -- Power BI can SUM these safely at the year level
+    CASE WHEN is_year_end = 1 THEN upr ELSE 0 END AS upr_year,
+    CASE WHEN is_year_end = 1 THEN ibnr ELSE 0 END AS ibnr_year,
+    CASE WHEN is_year_end = 1 THEN rbns ELSE 0 END AS rbns_year,
     
     -- Stabilization Reserve = P630 + P650
     (upr + ibnr + rbns) AS calculated_p580_check, -- Added for audit, usually P580 is sum of these
@@ -37,5 +65,5 @@ SELECT
     total_assets,
     total_reserves_denominator
 
-FROM monthly_bs
+FROM period_flags
 ORDER BY report_month DESC

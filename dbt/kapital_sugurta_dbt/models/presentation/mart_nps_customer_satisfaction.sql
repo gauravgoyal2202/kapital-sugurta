@@ -3,8 +3,9 @@
 /*
   Dashboard 18 — NPS and CSI (Customer Satisfaction)
   --------------------------------------------------
-  Calculates NPS Trend and average Satisfaction Index.
-  NPS = % Promoters - % Detractors
+  Updated Logic (Line 93):
+  - NPS = % Promoters - % Detractors
+  - CSI = Average score per survey index
 */
 
 WITH monthly_categories AS (
@@ -21,7 +22,9 @@ WITH monthly_categories AS (
         COUNT(*) as total_responses,
         SUM(CASE WHEN nps_category = 'Promoter' THEN 1 ELSE 0 END) as promoters,
         SUM(CASE WHEN nps_category = 'Detractor' THEN 1 ELSE 0 END) as detractors,
-        AVG(nps_score_raw) as avg_satisfaction_score
+        
+        -- CSI Calculation: Average of raw satisfaction scores
+        AVG(nps_score_raw) as csi_score
     FROM {{ ref('curated_nps_survey') }}
     GROUP BY 1, 2, 3, 4, 5, 6, 7
 )
@@ -38,13 +41,15 @@ SELECT
     scenario,
     
     total_responses,
-    avg_satisfaction_score,
     
-    -- NPS Calculation: ((Promoters - Detractors) / Total) * 100
+    -- Line 93: NPS Calculation
     ROUND(
         ( (promoters - detractors)::NUMERIC / NULLIF(total_responses, 0) ) * 100, 
         1
-    ) AS nps_index
+    ) AS nps_index,
+    
+    -- Line 93: CSI (Customer Satisfaction Index)
+    ROUND(csi_score::NUMERIC, 2) AS csi_index
 
 FROM monthly_categories
 ORDER BY report_month DESC, survey_type

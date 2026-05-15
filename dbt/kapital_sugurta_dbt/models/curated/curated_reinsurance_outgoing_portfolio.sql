@@ -1,121 +1,98 @@
-WITH source_data AS (
+WITH excel_source AS (
     SELECT * FROM {{ source('raw', 'reinsurance_outgoing_portfolio') }}
+    WHERE EXTRACT(YEAR FROM contract_conclusion_date) < 2026
+),
+
+oracle_source AS (
+    SELECT
+        r.id AS reinsurance_id,
+        r.direction,
+        r.contract_number AS slip_contract_number,
+        r.contract_issue_date AS slip_contract_issue_date,
+        r.slip_date, -- Added missing column
+        r.reinsurance_start_date,
+        r.reinsurance_end_date,
+        r.reinsurer_is_foreign,
+        r.brutto_ins_premium,
+        r.exchange_rate,
+        r.commission,
+        r.netto_ins_premium,
+        r.brutto_accrual_premium,
+        r.netto_accrual_premium, -- Added for validation
+        r.broker_commission,
+        r.reinsurant_share,
+        r.reinsurer_limit,
+        
+        c.insurance_product_name,
+        c.insurant_name,
+        c.classes AS insurance_classes,
+        c.insurance_sum,
+        c.contract_number,
+        c.contract_issue_date,
+        
+        div.sp_name1 AS division_name,
+        frm.name AS reinsurance_form_name,
+        typ.name AS reinsurance_type_name,
+        brk.name AS broker_name,
+        cur.sp_name1 AS currency_name
+        
+    FROM {{ source('raw', 'ins_reinsurance_oracle') }} r
+    LEFT JOIN {{ source('raw', 'ins_reins_contract_oracle') }} c ON c.reinsurance_id = r.id
+    LEFT JOIN {{ source('raw', 'sp_division_oracle') }} div ON div.sp_id = r.division_id
+    LEFT JOIN {{ source('raw', 'sp_reinsurance_form_oracle') }} frm ON frm.id = r.reinsurance_form_id
+    LEFT JOIN {{ source('raw', 'sp_reinsurance_type_oracle') }} typ ON typ.id = r.reinsurance_type_id
+    LEFT JOIN {{ source('raw', 'sp_reinsurance_brokers_oracle') }} brk ON brk.id = r.broker_id
+    LEFT JOIN {{ source('raw', 'p_sp_currency_oracle') }} cur ON cur.sp_id = r.currency_id
+    WHERE r.direction = 1 -- Outgoing
+      AND EXTRACT(YEAR FROM r.slip_date) >= 2026
+),
+
+combined AS (
+    -- 1. Historical Excel Data
+    SELECT
+        id::TEXT,
+        insurance_contract_number, -- Added for downstream models
+        policyholder,
+        insurance_type,
+        voluntary_insurance_type,
+        mandatory_insurance_type,
+        contract_conclusion_date,
+        total_accrued_premium_uzs,
+        total_premiums_ceded_uzs, -- Added for downstream models
+        reinsurer,
+        reinsurance_broker,
+        reinsurance_type,
+        'Excel' AS source_system
+    FROM excel_source
+
+    UNION ALL
+
+    -- 2. New Oracle Data
+    SELECT
+        reinsurance_id::TEXT,
+        contract_number, -- Mapped to insurance_contract_number
+        insurant_name,
+        insurance_product_name,
+        insurance_classes,
+        'N/A', -- Category split not direct in Oracle query
+        slip_date AS contract_conclusion_date,
+        COALESCE(netto_accrual_premium, 0) AS total_accrued_premium_uzs,
+        COALESCE(netto_accrual_premium, 0) AS total_premiums_ceded_uzs, -- Assuming same for outgoing
+        contract_reinsurer_name,
+        broker_name,
+        reinsurance_type_name,
+        'Oracle' AS source_system
+    FROM (
+        -- Inner select to handle the complex contract_reinsurer logic if needed
+        SELECT 
+            *,
+            NULL AS contract_reinsurer_name 
+        FROM oracle_source
+    ) os
 )
+
 SELECT
-    id,
-    TRIM(seq_number) AS seq_number,
-    TRIM(insurance_contract_number) AS insurance_contract_number,
-    TRIM(policyholder) AS policyholder,
-    TRIM(insurance_type) AS insurance_type,
-    TRIM(voluntary_insurance_type) AS voluntary_insurance_type,
-    TRIM(mandatory_insurance_type) AS mandatory_insurance_type,
-    TRIM(region) AS region,
-    TRIM(policyholder_country) AS policyholder_country,
-    TRIM(city_village) AS city_village,
-    TRIM(individual_legal_entity) AS individual_legal_entity,
-    contract_conclusion_date,
-    insured_amount_contract,
-    TRIM(contract_currency) AS contract_currency,
-    insurance_premium_contract,
-    TRIM(premium_currency_contract) AS premium_currency_contract,
-    contract_start_date,
-    contract_end_date,
-    insured_amount_policy,
-    TRIM(reinsurance_type) AS reinsurance_type,
-    insurance_premium_policy,
-    TRIM(premium_currency_policy) AS premium_currency_policy,
-    insurance_days_count,
-    TRIM(reinsurance_broker) AS reinsurance_broker,
-    TRIM(reinsurer) AS reinsurer,
-    cedant_commission,
-    actual_premium_usd_paid_in_uzs,
-    actual_premium_eur_paid_in_uzs,
-    actual_premium_usd,
-    actual_premium_eur,
-    actual_premium_rub,
-    actual_premium_uzs_net_reinsurance,
-    TRIM(premium_currency_policy2) AS premium_currency_policy2,
-    total_accrued_premium_uzs,
-    premium_accrual_date,
-    received_premium_usd,
-    received_premium_eur,
-    received_premium_rub,
-    received_premium_uzs,
-    total_received_premium_uzs,
-    premium_receipt_date,
-    TRIM(policy_number_slip_number) AS policy_number_slip_number,
-    insurance_effective_start_date,
-    insurance_effective_end_date,
-    policy_issue_date_slip_sign_date,
-    insurance_duration_days,
-    TRIM(notes) AS notes,
-    TRIM(bank_name_beneficiary) AS bank_name_beneficiary,
-    reinsurer_share_pct,
-    TRIM(reinsurer_or_broker_name) AS reinsurer_or_broker_name,
-    TRIM(reinsurer_or_broker_country) AS reinsurer_or_broker_country,
-    reinsurance_start_date,
-    reinsurance_end_date,
-    reinsurance_duration_days,
-    liabilities_ceded_reinsurance,
-    liabilities_ceded_rub,
-    liabilities_ceded_eur,
-    liabilities_ceded_usd,
-    total_premiums_ceded_uzs,
-    premiums_ceded_uzs,
-    premiums_ceded_usd,
-    premiums_ceded_usd_star,
-    premiums_ceded_eur_star,
-    premiums_ceded_eur,
-    premiums_ceded_rub,
-    total_commission_received_uzs,
-    commission_received_uzs,
-    commission_received_usd,
-    commission_received_usd_star,
-    commission_received_eur_star,
-    commission_received_eur,
-    commission_received_rub,
-    nonresident_tax_usd,
-    nonresident_tax_rub,
-    nonresident_tax_uzs,
-    net_reinsurance_premium_uzs,
-    net_reinsurance_premium_rub,
-    net_reinsurance_premium_usd_star,
-    net_reinsurance_premium_eur,
-    net_reinsurance_premium_usd,
-    net_reinsurance_premium_transfer_date,
-    own_retention,
-    income_attribution_date,
-    agency_commission,
-    agency_commission_pct,
-    TRIM(agent_name) AS agent_name,
-    acquisition_accrual_date,
-    preventive_reserve,
-    commission_accrual_date,
-    mtpl_preventive_reserve_5pct,
-    TRIM(legal_entity_status) AS legal_entity_status,
-    assistance_commission,
-    TRIM(reinsurance_agreement_number) AS reinsurance_agreement_number,
-    reinsurance_agreement_date,
-    TRIM(branch) AS branch,
-    administrative_expenses,
-    base_insurance_premium,
-    TRIM(insurance_contract_duration) AS insurance_contract_duration,
-    TRIM(blank_col) AS blank_col,
-    reporting_date,
-    contract_duration_days,
-    days_elapsed_since_effective,
-    days_remaining_liability,
-    days_remaining_liability_calc,
-    upr_reinsurer_share,
-    ibnr_reinsurer_share,
-    TRIM(accounting_group) AS accounting_group,
-    upr_reinsurer_share_usd,
-    upr_reinsurer_share_eur,
-    upr_reinsurer_share_rub,
-    ibnr_reinsurer_share_usd,
-    ibnr_reinsurer_share_eur,
-    ibnr_reinsurer_share_rub,
+    *,
     'Actual' AS scenario,
-    CURRENT_TIMESTAMP AS loaded_at,
-    CURRENT_TIMESTAMP AS updated_at
-FROM source_data
+    CURRENT_TIMESTAMP AS loaded_at
+FROM combined
