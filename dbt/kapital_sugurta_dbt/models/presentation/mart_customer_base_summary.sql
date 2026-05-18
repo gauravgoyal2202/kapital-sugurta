@@ -42,6 +42,7 @@ metrics AS (
         -- Line 91: Policies per Customer
         SUM(active_policy_count) AS total_active_policies,
         ROUND(SUM(active_policy_count)::NUMERIC / NULLIF(SUM(is_active_curr), 0), 4) AS avg_policies_per_customer,
+        ROUND(SUM(active_policy_count)::NUMERIC / NULLIF(SUM(is_active_curr), 0), 4) AS policies_per_customer,
         
         -- Line 90: Retention Rate Components
         SUM(is_retained) AS retained_customers,
