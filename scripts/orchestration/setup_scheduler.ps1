@@ -1,15 +1,18 @@
-# PowerShell script to create Windows Scheduled Task for Data Refresh
+# PowerShell script to create Windows Scheduled Task for daily Ingestion & Transformation Pipeline
 
-$Action = New-ScheduledTaskAction -Execute "python.exe" -Argument "C:\Canopus\project\kp_insurance_git\kapital-sugurta\scripts\orchestration\refresh_raw_data.py" -WorkingDirectory "C:\Canopus\project\kp_insurance_git"
+$ProjectRoot = "C:\Canopus\project\kp_insurance_git"
+$OrchestratorScript = "$ProjectRoot\kapital-sugurta\scripts\orchestration\run_pipeline.ps1"
+
+# 1. Define the action to execute the orchestrator script
+$Action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-ExecutionPolicy Bypass -File `"$OrchestratorScript`"" -WorkingDirectory $ProjectRoot
+
+# 2. Define daily trigger at 1:00 AM
 $Trigger = New-ScheduledTaskTrigger -Daily -At 1am
+
+# 3. Principal: Runs under SYSTEM with administrative privileges
 $Principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
 
-Register-ScheduledTask -TaskName "Kapital_Insurance_Raw_Refresh" -Action $Action -Trigger $Trigger -Principal $Principal -Description "Daily refresh of migrated Oracle tables to Postgres Raw Layer"
+# 4. Register the Task in Windows Task Scheduler
+Register-ScheduledTask -TaskName "Kapital_Insurance_Pipeline_Daily" -Action $Action -Trigger $Trigger -Principal $Principal -Description "Daily sequential execution of Raw Data Ingestion, NPS Loading, Data Quality Checks, and dbt Transformations."
 
-# Trigger a dbt run after the refresh (Separate Task or joined Action)
-$DbtAction = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-Command 'cd C:\Canopus\project\kp_insurance_git\kapital-sugurta\dbt\kapital_sugurta_dbt; dbt run'"
-$DbtTrigger = New-ScheduledTaskTrigger -Daily -At 4am
-
-Register-ScheduledTask -TaskName "Kapital_Insurance_Dbt_Run" -Action $DbtAction -Trigger $DbtTrigger -Principal $Principal -Description "Daily refresh of Dbt Marts after Raw data refresh"
-
-Write-Host "Scheduled tasks created successfully."
+Write-Host "Scheduled task 'Kapital_Insurance_Pipeline_Daily' created successfully."
