@@ -48,10 +48,40 @@ retention_flags AS (
     SELECT 
         f.report_month,
         f.customer_id,
-        cms.legal_form,
-        cms.customer_segment,
-        cms.oked_industry_code,
-        cms.region_code,
+        
+        -- Carry forward dimensions for customers who churned this month
+        COALESCE(
+            cms.legal_form,
+            MAX(cms.legal_form) OVER (
+                PARTITION BY f.customer_id ORDER BY f.report_month 
+                ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+            )
+        ) AS legal_form,
+        
+        COALESCE(
+            cms.customer_segment,
+            MAX(cms.customer_segment) OVER (
+                PARTITION BY f.customer_id ORDER BY f.report_month 
+                ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+            )
+        ) AS customer_segment,
+        
+        COALESCE(
+            cms.oked_industry_code,
+            MAX(cms.oked_industry_code) OVER (
+                PARTITION BY f.customer_id ORDER BY f.report_month 
+                ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+            )
+        ) AS oked_industry_code,
+        
+        COALESCE(
+            cms.region_code,
+            MAX(cms.region_code) OVER (
+                PARTITION BY f.customer_id ORDER BY f.report_month 
+                ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+            )
+        ) AS region_code,
+        
         COALESCE(cms.active_policy_count, 0) AS active_policy_count,
         
         -- Was active THIS month

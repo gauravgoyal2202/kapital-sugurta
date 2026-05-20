@@ -31,8 +31,8 @@ renewed_flags AS (
         CASE
             WHEN n.rekvezid IS NOT NULL
             AND (
-                COALESCE(n.policy_sery::VARCHAR, 'x') <> COALESCE(i.policy_sery::VARCHAR, 'x')
-                OR COALESCE(n.policy_number::VARCHAR, 'x') <> COALESCE(i.policy_number::VARCHAR, 'x')
+                COALESCE(NULLIF(n.policy_sery::VARCHAR, ''), 'x') <> COALESCE(NULLIF(i.policy_sery::VARCHAR, ''), 'x')
+                OR COALESCE(NULLIF(n.policy_number::VARCHAR, ''), 'x') <> COALESCE(NULLIF(i.policy_number::VARCHAR, ''), 'x')
             )
             AND n.date_control > i.date_end
             THEN 1

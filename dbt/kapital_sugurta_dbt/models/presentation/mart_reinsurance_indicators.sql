@@ -5,11 +5,11 @@ WITH outgoing_base AS (
         COALESCE(NULLIF(TRIM(insurance_type), ''), 'Unknown') AS insurance_type,
         COALESCE(NULLIF(TRIM(voluntary_insurance_type), ''), NULLIF(TRIM(mandatory_insurance_type), ''), 'N/A') AS category,
         
-        SUM(CASE WHEN EXTRACT(YEAR FROM contract_conclusion_date) = 2024 THEN total_accrued_premium_uzs ELSE 0 END) AS outgoing_volume_2024_uzs,
-        SUM(CASE WHEN EXTRACT(YEAR FROM contract_conclusion_date) = 2025 THEN total_accrued_premium_uzs ELSE 0 END) AS outgoing_volume_2025_uzs
+        SUM(CASE WHEN EXTRACT(YEAR FROM premium_accrual_date) = 2024 THEN total_accrued_premium_uzs ELSE 0 END) AS outgoing_volume_2024_uzs,
+        SUM(CASE WHEN EXTRACT(YEAR FROM premium_accrual_date) = 2025 THEN total_accrued_premium_uzs ELSE 0 END) AS outgoing_volume_2025_uzs
         
     FROM {{ ref('curated_reinsurance_outgoing_portfolio') }}
-    WHERE contract_conclusion_date IS NOT NULL
+    WHERE premium_accrual_date IS NOT NULL
     GROUP BY 1, 2
 ),
 

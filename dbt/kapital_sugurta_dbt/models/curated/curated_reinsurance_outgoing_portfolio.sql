@@ -1,6 +1,6 @@
 WITH excel_source AS (
     SELECT * FROM {{ source('raw', 'reinsurance_outgoing_portfolio') }}
-    WHERE EXTRACT(YEAR FROM contract_conclusion_date) < 2026
+    WHERE EXTRACT(YEAR FROM premium_accrual_date) < 2026
 ),
 
 oracle_source AS (
@@ -56,9 +56,9 @@ combined AS (
         insurance_type,
         voluntary_insurance_type,
         mandatory_insurance_type,
-        contract_conclusion_date,
+        premium_accrual_date,      -- REPLACED contract_conclusion_date
         total_accrued_premium_uzs,
-        total_premiums_ceded_uzs, -- Added for downstream models
+        total_premiums_ceded_uzs,  -- Added for downstream models
         reinsurer,
         reinsurance_broker,
         reinsurance_type,
@@ -75,7 +75,7 @@ combined AS (
         insurance_product_name,
         insurance_classes,
         'N/A', -- Category split not direct in Oracle query
-        slip_date AS contract_conclusion_date,
+        slip_date AS premium_accrual_date, -- REPLACED contract_conclusion_date mapping
         COALESCE(netto_accrual_premium, 0) AS total_accrued_premium_uzs,
         COALESCE(netto_accrual_premium, 0) AS total_premiums_ceded_uzs, -- Assuming same for outgoing
         contract_reinsurer_name,
@@ -95,4 +95,4 @@ SELECT
     *,
     'Actual' AS scenario,
     CURRENT_TIMESTAMP AS loaded_at
-FROM combined
+FROM combined

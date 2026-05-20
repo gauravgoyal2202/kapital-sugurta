@@ -11,10 +11,10 @@ WITH incoming AS (
 
 outgoing AS (
     SELECT
-        DATE_TRUNC('month', contract_conclusion_date)::DATE AS report_month,
+        DATE_TRUNC('month', premium_accrual_date)::DATE AS report_month,
         SUM(total_accrued_premium_uzs) AS outgoing_volume_uzs
     FROM {{ ref('curated_reinsurance_outgoing_portfolio') }}
-    WHERE contract_conclusion_date IS NOT NULL
+    WHERE premium_accrual_date IS NOT NULL
     GROUP BY 1
 ),
 
