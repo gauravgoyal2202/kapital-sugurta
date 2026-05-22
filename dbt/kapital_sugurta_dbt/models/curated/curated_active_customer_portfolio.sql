@@ -27,6 +27,8 @@ raw_active_policies AS (
         a.owner as customer_id,
         DATE_TRUNC('month', po.tb_date_begin)::DATE as start_month,
         DATE_TRUNC('month', po.tb_date_end)::DATE as end_month,
+        po.tb_date_begin::DATE as exact_start_date,
+        po.tb_date_end::DATE as exact_end_date,
         
         a.fizyur,
         k.tb_orgoked as oked_code,
@@ -46,6 +48,8 @@ SELECT
     s.report_month,
     p.policy_id,
     p.customer_id,
+    p.exact_start_date,
+    p.exact_end_date,
     
     -- Common Dashboard 16 Filters
     CASE WHEN p.fizyur = 0 THEN 'Physical' ELSE 'Juridical' END AS legal_form,

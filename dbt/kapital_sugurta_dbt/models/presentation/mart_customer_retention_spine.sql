@@ -21,88 +21,43 @@ WITH customer_monthly_state AS (
         MAX(customer_segment) AS customer_segment,
         MAX(oked_industry_code) AS oked_industry_code,
         MAX(region_code) AS region_code,
-        COUNT(DISTINCT policy_id) AS active_policy_count
+        COUNT(DISTINCT policy_id) AS active_policy_count,
+        
+        -- Point in Time checks:
+        -- 1. Was active on EXACTLY the first day of the month?
+        MAX(CASE 
+            WHEN exact_start_date <= report_month 
+             AND exact_end_date >= report_month 
+            THEN 1 ELSE 0 
+        END) AS active_on_first_day,
+        
+        -- 2. Was active on EXACTLY the last day of the month?
+        MAX(CASE 
+            WHEN exact_start_date <= (report_month + INTERVAL '1 month' - INTERVAL '1 day')::DATE 
+             AND exact_end_date >= (report_month + INTERVAL '1 month' - INTERVAL '1 day')::DATE 
+            THEN 1 ELSE 0 
+        END) AS active_on_last_day
+        
     FROM {{ ref('curated_active_customer_portfolio') }}
     GROUP BY 1, 2
-),
-
--- Step 2: Create a full set of Customer-Months to track drop-offs (churn)
--- We need this to see customers who were active last month but are NOT active this month.
-all_customers AS (
-    SELECT DISTINCT customer_id FROM customer_monthly_state
-),
-
-month_spine AS (
-    SELECT DISTINCT report_month FROM customer_monthly_state
-),
-
-full_spine AS (
-    SELECT 
-        m.report_month,
-        c.customer_id
-    FROM month_spine m
-    CROSS JOIN all_customers c
-),
-
-retention_flags AS (
-    SELECT 
-        f.report_month,
-        f.customer_id,
-        
-        -- Carry forward dimensions for customers who churned this month
-        COALESCE(
-            cms.legal_form,
-            MAX(cms.legal_form) OVER (
-                PARTITION BY f.customer_id ORDER BY f.report_month 
-                ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
-            )
-        ) AS legal_form,
-        
-        COALESCE(
-            cms.customer_segment,
-            MAX(cms.customer_segment) OVER (
-                PARTITION BY f.customer_id ORDER BY f.report_month 
-                ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
-            )
-        ) AS customer_segment,
-        
-        COALESCE(
-            cms.oked_industry_code,
-            MAX(cms.oked_industry_code) OVER (
-                PARTITION BY f.customer_id ORDER BY f.report_month 
-                ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
-            )
-        ) AS oked_industry_code,
-        
-        COALESCE(
-            cms.region_code,
-            MAX(cms.region_code) OVER (
-                PARTITION BY f.customer_id ORDER BY f.report_month 
-                ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
-            )
-        ) AS region_code,
-        
-        COALESCE(cms.active_policy_count, 0) AS active_policy_count,
-        
-        -- Was active THIS month
-        CASE WHEN cms.customer_id IS NOT NULL THEN 1 ELSE 0 END AS is_active_curr,
-        
-        -- Was active LAST month (Denominator)
-        LAG(CASE WHEN cms.customer_id IS NOT NULL THEN 1 ELSE 0 END) OVER (
-            PARTITION BY f.customer_id ORDER BY f.report_month
-        ) AS was_active_prev,
-        
-        -- Retained (Numerator): Active both last month and this month
-        CASE WHEN cms.customer_id IS NOT NULL AND LAG(cms.customer_id) OVER (
-            PARTITION BY f.customer_id ORDER BY f.report_month
-        ) IS NOT NULL THEN 1 ELSE 0 END AS is_retained
-
-    FROM full_spine f
-    LEFT JOIN customer_monthly_state cms 
-        ON f.report_month = cms.report_month 
-       AND f.customer_id = cms.customer_id
 )
 
-SELECT * 
-FROM retention_flags
-WHERE is_active_curr = 1 OR was_active_prev = 1
+SELECT 
+    report_month,
+    customer_id,
+    legal_form,
+    customer_segment,
+    oked_industry_code,
+    region_code,
+    active_policy_count,
+    
+    -- Active at any point in the month (since they are in this table, they were active)
+    1 AS is_active_curr,
+    
+    -- Client's Denominator: Active on the FIRST day of the month
+    active_on_first_day AS was_active_prev, -- Kept alias to prevent breaking downstream models
+    
+    -- Client's Numerator: Active on BOTH first day and last day
+    CASE WHEN active_on_first_day = 1 AND active_on_last_day = 1 THEN 1 ELSE 0 END AS is_retained
+
+FROM customer_monthly_state
