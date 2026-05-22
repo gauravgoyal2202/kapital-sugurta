@@ -23,15 +23,13 @@ commission_delta AS (
     WHERE scenario = 'Actual'
 ),
 
--- Step 2: Premium delta (YTD → monthly)
+-- Step 2: Premium delta (monthly volume from curated premium)
 premium_delta AS (
     SELECT
-        report_date,
-        premium_income,
-        LAG(premium_income) OVER (ORDER BY report_date) AS prev_premium,
-        premium_income - LAG(premium_income) OVER (ORDER BY report_date) AS monthly_premium
-    FROM {{ ref('curated_financial_performance') }}
-    WHERE scenario = 'Actual'
+        DATE_TRUNC('month', payment_date)::DATE AS report_month,
+        SUM(premium_amount) AS monthly_premium
+    FROM {{ ref('curated_insurance_premium') }}
+    GROUP BY 1
 ),
 
 -- Step 3: Monthly claims
@@ -167,7 +165,7 @@ SELECT
 
 FROM customer_metrics cm
 LEFT JOIN premium_delta pd
-    ON DATE_TRUNC('month', pd.report_date)::DATE = cm.report_month
+    ON pd.report_month = cm.report_month
     AND pd.monthly_premium IS NOT NULL
 LEFT JOIN commission_delta cd
     ON DATE_TRUNC('month', cd.report_date)::DATE = cm.report_month

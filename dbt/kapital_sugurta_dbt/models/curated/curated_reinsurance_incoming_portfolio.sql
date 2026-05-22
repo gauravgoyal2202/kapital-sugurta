@@ -53,7 +53,7 @@ combined AS (
         voluntary_insurance_type,
         mandatory_insurance_type,
         contract_conclusion_date,
-        total_accrued_premium_uzs,
+        actual_premium_uzs AS total_accrued_premium_uzs,
         'Excel' AS source_system
     FROM excel_source
 
@@ -76,4 +76,4 @@ SELECT
     *,
     'Actual' AS scenario,
     CURRENT_TIMESTAMP AS loaded_at
-FROM combined
+FROM combined
