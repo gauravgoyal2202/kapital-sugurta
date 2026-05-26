@@ -1,9 +1,9 @@
 {{ config(materialized='table') }}
 
 /*
-  Dashboard — Partner / Channel Profitability
-  --------------------------------------------
-  Includes only EXTERNAL / PARTNER channels — i.e. everything EXCEPT own-sales channels:
+  Dashboard — Own Sales
+  ----------------------
+  Includes ONLY own-sales / in-house channels:
     - In-House - Agent - Not API
     - In-House - Internal - API
     - In-House - Internal - Not API
@@ -37,8 +37,8 @@ WITH monthly_channel_agg AS (
 
     FROM {{ ref('curated_partner_indicators') }}
 
-    -- Exclude own-sales / in-house channels
-    WHERE channels NOT IN (
+    -- Include only own-sales / in-house channels
+    WHERE channels IN (
         'In-House - Agent - Not API',
         'In-House - Internal - API',
         'In-House - Internal - Not API',
