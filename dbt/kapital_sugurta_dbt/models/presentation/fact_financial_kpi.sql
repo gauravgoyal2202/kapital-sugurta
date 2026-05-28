@@ -4,7 +4,7 @@ SELECT
     -- ROA
     fp.net_profit / bs.total_assets_final AS roa,
     -- ROE
-    fp.net_profit / (bs.equity + bs.retained_earnings) AS roe,
+    fp.net_profit / (bs.equity) AS roe,
     fp.scenario as scenario
 
 FROM {{ ref('curated_financial_performance') }} fp

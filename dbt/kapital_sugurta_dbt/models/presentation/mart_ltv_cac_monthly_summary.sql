@@ -161,7 +161,9 @@ SELECT
             / np.new_policies_count
         )::NUMERIC, 2)
         ELSE 0
-    END AS customer_acquisition_cost_uzs
+    END AS customer_acquisition_cost_uzs,
+
+    'Actual' AS scenario
 
 FROM customer_metrics cm
 LEFT JOIN premium_delta pd

@@ -118,14 +118,14 @@ SELECT
     -- Formula: (Claims + P610) / ( (011+013) - 012 - P590_change )
     CASE 
         WHEN denominator_net_earned_premium = 0 THEN 0 
-        ELSE (claims_payout + p610_reserve) / denominator_net_earned_premium * 100.0 
+        ELSE (claims_payout) / denominator_net_earned_premium * 100.0 
     END AS loss_ratio_pct,
     
     -- 2. Expense Ratio %
     -- Formula: (F070 + F090) / ( (011+013) - 012 - P590_change )
     CASE 
         WHEN denominator_net_earned_premium = 0 THEN 0 
-        ELSE (expenses_f070 + expenses_f090) / denominator_net_earned_premium * 100.0 
+        ELSE (expenses_f070 + expenses_f090 - claims_payout) / denominator_net_earned_premium * 100.0 
     END AS expense_ratio_pct,
     
     -- 3. Combined Ratio %
@@ -133,12 +133,12 @@ SELECT
     (
         CASE 
             WHEN denominator_net_earned_premium = 0 THEN 0 
-            ELSE (claims_payout + p610_reserve) / denominator_net_earned_premium * 100.0 
+            ELSE (claims_payout) / denominator_net_earned_premium * 100.0 
         END 
         + 
         CASE 
             WHEN denominator_net_earned_premium = 0 THEN 0 
-            ELSE (expenses_f070 + expenses_f090) / denominator_net_earned_premium * 100.0 
+            ELSE (expenses_f070 + expenses_f090 - claims_payout) / denominator_net_earned_premium * 100.0 
         END
     ) AS combined_ratio_pct,
     

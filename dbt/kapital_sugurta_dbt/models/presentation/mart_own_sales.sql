@@ -3,24 +3,23 @@
 /*
   Dashboard — Own Sales
   ----------------------
-  Includes ONLY own-sales / in-house channels:
-    - In-House - Agent - Not API
+  Includes own-sales / in-house channels from curated_partner_indicators:
+    - In-House - Agent    - Not API
     - In-House - Internal - API
     - In-House - Internal - Not API
-    - Website - Internal - API
+    - Website  - Internal - API
 
-  Source columns from curated_partner_indicators:
-    oplsum      → gross premium collected (UZS)
-    kom_sum     → agency commission paid  (UZS)
-    claim_value → claims paid             (UZS, from ins_loss_oracle)
-    fifty       → motivation / fifty pool (UZS, from ins_fifty_pack)
-    ras_value   → reinsurance / rastorg   (UZS, from ins_rastorg_oracle)
+  Plus the Call Center channel from curated_call_center_indicators,
+  which also exposes `strah_summa_uzs` (Sum Insured).
 
-  Profitability formula:
-    (Premium - Commission - Claims - Motivation - Reinsurance) / Premium × 100
+  All raw Oracle joins and business logic live in the curated layer.
+  This mart is a pure aggregation / presentation layer.
 */
 
-WITH monthly_channel_agg AS (
+-- ──────────────────────────────────────────────
+-- 1. Own-Sales channels (In-House + Website)
+-- ──────────────────────────────────────────────
+WITH own_sales AS (
 
     SELECT
         month                AS report_month,
@@ -33,7 +32,8 @@ WITH monthly_channel_agg AS (
         SUM(kom_sum)         AS commission_uzs,
         SUM(claim_value)     AS claims_uzs,
         SUM(fifty)           AS motivation_uzs,
-        SUM(ras_value)       AS reinsurance_uzs
+        SUM(ras_value)       AS reinsurance_uzs,
+        0::NUMERIC           AS strah_summa_uzs
 
     FROM {{ ref('curated_partner_indicators') }}
 
@@ -52,12 +52,49 @@ WITH monthly_channel_agg AS (
         product_category,
         product_name
 
+),
+
+-- ──────────────────────────────────────────────
+-- 2. Call Center channel (dedicated curated model)
+-- ──────────────────────────────────────────────
+call_center AS (
+
+    SELECT
+        month                AS report_month,
+        channels,
+        insurance_type,
+        product_category,
+        product_name,
+
+        oplsum               AS premium_uzs,
+        kom_sum              AS commission_uzs,
+        claim_value          AS claims_uzs,
+        fifty                AS motivation_uzs,
+        ras_value            AS reinsurance_uzs,
+        strah_summa          AS strah_summa_uzs
+
+    FROM {{ ref('curated_call_center_indicators') }}
+
+),
+
+-- ──────────────────────────────────────────────
+-- 3. Combine both channels
+-- ──────────────────────────────────────────────
+combined AS (
+
+    SELECT * FROM own_sales
+    UNION ALL
+    SELECT * FROM call_center
+
 )
 
+-- ──────────────────────────────────────────────
+-- 4. Final output with derived KPIs
+-- ──────────────────────────────────────────────
 SELECT
     report_month,
-    EXTRACT(YEAR    FROM report_month)::INT     AS report_year,
-    EXTRACT(QUARTER FROM report_month)::INT     AS report_quarter,
+    EXTRACT(YEAR    FROM report_month)::INT                             AS report_year,
+    EXTRACT(QUARTER FROM report_month)::INT                             AS report_quarter,
 
     channels,
     insurance_type,
@@ -70,6 +107,7 @@ SELECT
     claims_uzs,
     motivation_uzs,
     reinsurance_uzs,
+    strah_summa_uzs,
 
     -- Net profit after all deductions
     (premium_uzs - commission_uzs - claims_uzs - motivation_uzs - reinsurance_uzs)
@@ -85,11 +123,12 @@ SELECT
                 )::NUMERIC,
              2)
         ELSE 0
-    END                                         AS profitability_pct,
+    END                                                                 AS profitability_pct,
 
-    'Actual'                                    AS scenario
+    'Actual'                                                            AS scenario
 
-FROM monthly_channel_agg
+FROM combined
+
 ORDER BY
     report_month DESC,
     channels,
