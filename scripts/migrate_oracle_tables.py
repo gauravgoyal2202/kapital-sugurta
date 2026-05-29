@@ -6,6 +6,8 @@ import psycopg2
 from psycopg2 import extras
 from dotenv import load_dotenv
 from datetime import datetime
+import time
+import traceback
 
 # Load environment variables
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
@@ -76,7 +78,9 @@ TABLES_TO_MIGRATE = [
     'sp_division',
     'sp_reinsurance_org',
     'sp_reinsurance_foreign_org',
-    'sp_country'
+    'sp_country',
+    'INS_BANK_PTURI',
+    'INS_OSGO'  
 ]
 
 BATCH_SIZE = 10000
@@ -111,6 +115,88 @@ def get_oracle_columns(ora_cursor, table_name):
     ora_cursor.execute(query, table_name=table_name.upper(), owner=ORACLE_SCHEMA)
     return ora_cursor.fetchall()
 
+def get_oracle_pks(ora_cursor, table_name):
+    query = """
+        SELECT cols.column_name
+        FROM all_constraints cons, all_cons_columns cols
+        WHERE cols.table_name = :table_name
+        AND cons.constraint_type = 'P'
+        AND cons.constraint_name = cols.constraint_name
+        AND cons.owner = :owner
+        ORDER BY cols.position
+    """
+    ora_cursor.execute(query, table_name=table_name.upper(), owner=ORACLE_SCHEMA)
+    return [row[0].lower() for row in ora_cursor.fetchall()]
+
+INCREMENTAL_CONFIG = {
+    'INS_AGENT_AKT': 'MODIFIED_DATE',
+    'ins_anketa': 'MODIFIED_DATE',
+    'ins_bank_client': 'MODIFIED_DATE',
+    'INS_EMPLOYEE': 'POST_DATE',
+    'INS_HEADBANKS': 'INS_ID',
+    'INS_INVDEP': 'DOG_DATE',
+    'INS_INVLOAN': 'DOG_DATE',
+    'INS_INVLOAN_ACCRUAL': 'ACCDATE_FROM',
+    'INS_INVLOAN_OPLATA': 'INS_ID',
+    'ins_kontragent': 'MODIFIED_DATE',
+    'ins_kurs': 'KURS_DATE',
+    'ins_oplata': 'MODIFIED_DATE',
+    'ins_polis': 'MODIFIED_DATE',
+    'INS_PTURI': 'MODIFIED_DATE',
+    'INS_RASTORG': 'MODIFIED_DATE',
+    'INS_REGRESS': 'CREATE_DATE',
+    'INS_REGRESS_BANK': 'MODIFIED_DATE',
+    'ins_reinsurance': 'CREATED_DATE',
+    'ins_reins_contract': 'CONTRACT_ISSUE_DATE',
+    'INS_SOBITIE': 'MODIFIED_DATE',
+    'INS_VIPLATI': 'MODIFIED_DATE',
+    'P_SP_CURRENCY': 'SP_ID',
+    'sp_country': 'SP_DATE',
+    'sp_division': 'SP_CREATED_DATE',
+    'SP_ORGTYPE': 'SP_ID',
+    'sp_reinsurance_brokers': 'COUNTRY_ID',
+    'sp_reinsurance_foreign_org': 'MODIFIED_DATE',
+    'tb_anketa': 'TB_PASPDATE',
+    'tb_avto': 'TB_TEXPDATE',
+    'tb_oplata': 'TB_DATEOPL',
+    'tb_polis': 'TB_DATE_BEGIN',
+    'TB_USERS': 'TB_VIDANDATE',
+    'INS_BANK_PTURI': 'CREATED_DATE'
+}
+
+def init_watermark_table(pg_cursor):
+    pg_cursor.execute("CREATE SCHEMA IF NOT EXISTS raw;")
+    pg_cursor.execute("""
+        CREATE TABLE IF NOT EXISTS raw.etl_watermarks (
+            table_name VARCHAR(255) PRIMARY KEY,
+            last_watermark_value TEXT,
+            last_watermark_type VARCHAR(50),
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+    """)
+
+def get_watermark(pg_cursor, table_name):
+    pg_cursor.execute("SELECT last_watermark_value FROM raw.etl_watermarks WHERE table_name = %s", (table_name.lower(),))
+    res = pg_cursor.fetchone()
+    return res[0] if res else None
+
+def update_watermark(pg_cursor, table_name, value, w_type):
+    if value is None: return
+    # Format datetime robustly for storage
+    if isinstance(value, datetime):
+        val_str = value.strftime('%Y-%m-%d %H:%M:%S.%f')
+    else:
+        val_str = str(value)
+        
+    pg_cursor.execute("""
+        INSERT INTO raw.etl_watermarks (table_name, last_watermark_value, last_watermark_type, updated_at)
+        VALUES (%s, %s, %s, CURRENT_TIMESTAMP)
+        ON CONFLICT (table_name) DO UPDATE SET
+            last_watermark_value = EXCLUDED.last_watermark_value,
+            last_watermark_type = EXCLUDED.last_watermark_type,
+            updated_at = EXCLUDED.updated_at;
+    """, (table_name.lower(), val_str, w_type))
+
 def get_counts(ora_cursor, pg_cursor, ora_table, pg_table):
     ora_cursor.execute(f"SELECT COUNT(*) FROM {ORACLE_SCHEMA}.{ora_table}")
     o_count = ora_cursor.fetchone()[0]
@@ -121,143 +207,209 @@ def get_counts(ora_cursor, pg_cursor, ora_table, pg_table):
 
 
 def migrate_table(ora_conn, pg_conn, table_name):
+    start_time = time.time()
     # PostgreSQL stores unquoted identifiers in lowercase
     pg_table = f"{table_name}_oracle".lower()
     ora_cursor = ora_conn.cursor()
     pg_cursor = pg_conn.cursor()
     
+    result = {
+        'table': table_name,
+        'status': 'PENDING',
+        'rows': 0,
+        'duration': 0,
+        'decision': 'N/A',
+        'error': None
+    }
+    
     try:
+        # 0. Ensure watermark table exists
+        init_watermark_table(pg_cursor)
+        
         # 1. Inspect Schema
         columns_meta = get_oracle_columns(ora_cursor, table_name)
         if not columns_meta:
             logging.error(f"{table_name}: Not found in Oracle schema {ORACLE_SCHEMA}")
-            return
+            result['status'] = 'NOT FOUND'
+            return result
         
         col_names = [c[0].lower() for c in columns_meta]
-        date_cols = [c[0].lower() for c in columns_meta if 'DATE' in c[1].upper() or 'TIMESTAMP' in c[1].upper()]
-        mod_col = next((c for c in date_cols if 'modified' in c or 'updated' in c), None)
-
-        # 2. Check existence and validation
+        inc_col = INCREMENTAL_CONFIG.get(table_name) or INCREMENTAL_CONFIG.get(table_name.upper()) or INCREMENTAL_CONFIG.get(table_name.lower())
+        pk_cols = get_oracle_pks(ora_cursor, table_name)
+        
+        # 2. Synchronize Schema
         pg_cursor.execute("SELECT exists(select from information_schema.tables where table_schema='raw' and table_name=%s)", (pg_table,))
         exists = pg_cursor.fetchone()[0]
         
-        decision = "CREATED"
-        o_count, p_count = 0, 0
-        o_max, p_max = None, None
-
-        if exists:
-            # Guarantee the ETL columns exist on previously created tables
-            pg_cursor.execute(f"ALTER TABLE raw.{pg_table} ADD COLUMN IF NOT EXISTS etl_uploaded_date TIMESTAMP;")
-            pg_cursor.execute(f"ALTER TABLE raw.{pg_table} ADD COLUMN IF NOT EXISTS etl_updated_date TIMESTAMP;")
-            
-            # Synchronize columns: Add any columns that exist in Oracle but not in PostgreSQL
-            pg_cursor.execute("SELECT column_name FROM information_schema.columns WHERE table_schema='raw' AND table_name=%s", (pg_table,))
-            pg_cols = {row[0].lower() for row in pg_cursor.fetchall()}
+        if not exists:
+            pg_column_defs = []
             for col in columns_meta:
-                col_name = col[0].lower()
-                if col_name not in pg_cols:
+                pg_type = map_oracle_to_pg_type(col[1], col[2], col[3])
+                pg_column_defs.append(f"{col[0].lower()} {pg_type} {'NULL' if col[4]=='Y' else 'NOT NULL'}")
+            
+            pg_column_defs.append("etl_uploaded_date TIMESTAMP NULL")
+            pg_column_defs.append("etl_updated_date TIMESTAMP NULL")
+            
+            pg_cursor.execute(f"CREATE TABLE raw.{pg_table} ({', '.join(pg_column_defs)})")
+            if pk_cols:
+                pg_cursor.execute(f"ALTER TABLE raw.{pg_table} ADD PRIMARY KEY ({', '.join(pk_cols)})")
+            logging.info(f"  [{table_name}] Created target table raw.{pg_table}")
+        else:
+            # Sync existing columns
+            pg_cursor.execute("SELECT column_name FROM information_schema.columns WHERE table_schema='raw' AND table_name=%s", (pg_table,))
+            current_pg_cols = {row[0].lower() for row in pg_cursor.fetchall()}
+            for col in columns_meta:
+                c_name = col[0].lower()
+                if c_name not in current_pg_cols:
                     pg_type = map_oracle_to_pg_type(col[1], col[2], col[3])
-                    nullable = 'NULL' if col[4]=='Y' else 'NOT NULL'
-                    pg_cursor.execute(f"ALTER TABLE raw.{pg_table} ADD COLUMN {col_name} {pg_type} {nullable}")
-                    logging.info(f"  Added missing column {col_name} to raw.{pg_table}")
+                    pg_cursor.execute(f"ALTER TABLE raw.{pg_table} ADD COLUMN {c_name} {pg_type} NULL")
+                    logging.info(f"  [{table_name}] Added missing column: {c_name}")
 
-            pg_cursor.execute(f"SELECT COUNT(*), MAX(etl_updated_date) FROM raw.{pg_table}")
-            _res = pg_cursor.fetchone()
-            p_count = _res[0]
-            pg_max_etl = _res[1]
-            p_max = pg_max_etl
+            # Ensure Primary Key exists for UPSERT logic
+            if pk_cols:
+                pg_cursor.execute("""
+                    SELECT count(*)
+                    FROM information_schema.table_constraints
+                    WHERE table_schema = 'raw'
+                    AND table_name = %s
+                    AND constraint_type = 'PRIMARY KEY'
+                """, (pg_table,))
+                if pg_cursor.fetchone()[0] == 0:
+                    try:
+                        pg_cursor.execute(f"ALTER TABLE raw.{pg_table} ADD PRIMARY KEY ({', '.join(pk_cols)})")
+                        logging.info(f"  [{table_name}] Added missing Primary Key constraint")
+                    except Exception as pk_err:
+                        logging.warning(f"  [{table_name}] Could not add PK: {pk_err}. Using non-upsert fallback.")
+                        pk_cols = []
+
+        # 3. Handle Watermark and Incremental extraction
+        last_watermark = get_watermark(pg_cursor, table_name)
+        extraction_query = f"SELECT {', '.join(col_names)} FROM {ORACLE_SCHEMA}.{table_name}"
+        params = {}
+        
+        if inc_col and last_watermark:
+            col_meta = next((c for c in columns_meta if c[0].lower() == inc_col.lower()), None)
+            is_date = col_meta and ('DATE' in col_meta[1].upper() or 'TIMESTAMP' in col_meta[1].upper())
             
-            if mod_col:
-                # Fast — Oracle MAX on an indexed date column is cheap
-                ora_cursor.execute(f"SELECT MAX({mod_col}) FROM {ORACLE_SCHEMA}.{table_name}")
-                o_max = ora_cursor.fetchone()[0]
-                
-                # Reload if never loaded or source has newer data
-                if pg_max_etl is None or (o_max is not None and pg_max_etl < o_max):
-                    decision = "RELOADED"
-                else:
-                    decision = "SKIPPED"
+            if is_date:
+                extraction_query += f" WHERE {inc_col} > TO_TIMESTAMP(:wm, 'YYYY-MM-DD HH24:MI:SS.FF')"
             else:
-                # Fallback: skip if etl_updated_date was set within last 24h
-                from datetime import timedelta
-                timespan_threshold = datetime.now() - timedelta(days=1)
-                if pg_max_etl is None or pg_max_etl < timespan_threshold:
-                    decision = "RELOADED"
-                else:
-                    decision = "SKIPPED"
-            
-            if decision == "SKIPPED":
-                logging.info(f"{table_name:25} | PG:{p_count:9} | Ora MaxDate: {str(o_max):<24} | ETL Updated: {str(p_max):<24} | {decision}")
-                return
+                extraction_query += f" WHERE {inc_col} > :wm"
+            params['wm'] = last_watermark
+            decision = f"INCREMENTAL ({inc_col} > {last_watermark})"
+        else:
+            decision = "FULL LOAD"
 
-        # 3. Perform Migration (RELOAD or CREATE)
-        logging.info(f"{table_name:25} | PG:{p_count:9} | Ora MaxDate: {str(o_max):<24} | ETL Updated: {str(p_max):<24} | {decision}")
-        
-        # Create table if not exists
-        pg_column_defs = []
-        for col in columns_meta:
-            pg_type = map_oracle_to_pg_type(col[1], col[2], col[3])
-            pg_column_defs.append(f"{col[0].lower()} {pg_type} {'NULL' if col[4]=='Y' else 'NOT NULL'}")
-        
-        # Add ETL timestamp columns (etl_uploaded_date = first load, etl_updated_date = every reload)
-        pg_column_defs.append("etl_uploaded_date TIMESTAMP NULL")
-        pg_column_defs.append("etl_updated_date TIMESTAMP NULL")
-        
-        pg_cursor.execute(f"CREATE SCHEMA IF NOT EXISTS raw;")
-        pg_cursor.execute(f"CREATE TABLE IF NOT EXISTS raw.{pg_table} ({', '.join(pg_column_defs)})")
-        
-        # Capture the original uploaded_date before truncating (for RELOAD case)
-        original_uploaded_date = None
-        if decision == "RELOADED":
-            pg_cursor.execute(f"SELECT MIN(etl_uploaded_date) FROM raw.{pg_table}")
-            original_uploaded_date = pg_cursor.fetchone()[0]
-        
-        # Truncate for reload
-        pg_cursor.execute(f"TRUNCATE TABLE raw.{pg_table}")
-        
+        result['decision'] = decision
+        logging.info(f"{table_name:25} | Decision: {decision}")
+
+        # 4. Prepare UPSERT logic
         now = datetime.now()
-        uploaded_date = original_uploaded_date if decision == "RELOADED" else now
-        
-        # Batch Move — include ETL timestamps in each row
-        ora_cursor.execute(f"SELECT {', '.join(col_names)} FROM {ORACLE_SCHEMA}.{table_name}")
         insert_cols = ', '.join(col_names) + ', etl_uploaded_date, etl_updated_date'
-        insert_sql = f"INSERT INTO raw.{pg_table} ({insert_cols}) VALUES %s"
+        
+        if pk_cols:
+            update_clause = ', '.join([f"{col} = EXCLUDED.{col}" for col in col_names if col not in pk_cols])
+            if not update_clause:
+                update_clause = "etl_updated_date = EXCLUDED.etl_updated_date"
+            else:
+                update_clause += ", etl_updated_date = EXCLUDED.etl_updated_date"
+                
+            insert_sql = f"""
+                INSERT INTO raw.{pg_table} ({insert_cols}) 
+                VALUES %s 
+                ON CONFLICT ({', '.join(pk_cols)}) 
+                DO UPDATE SET {update_clause}
+            """
+        else:
+            if not last_watermark:
+                pg_cursor.execute(f"TRUNCATE TABLE raw.{pg_table}")
+            insert_sql = f"INSERT INTO raw.{pg_table} ({insert_cols}) VALUES %s"
+
+        # 5. Execute Migration
+        ora_cursor.execute(extraction_query, **params)
         
         inserted = 0
+        new_max_watermark = None
+        col_indices = {name: i for i, name in enumerate(col_names)}
+        inc_idx = col_indices.get(inc_col.lower()) if inc_col else None
+
         while True:
             rows = ora_cursor.fetchmany(BATCH_SIZE)
             if not rows: break
-            # Append ETL timestamps to each row
-            rows_with_etl = [r + (uploaded_date, now) for r in rows]
+            
+            if inc_idx is not None:
+                batch_max = max(r[inc_idx] for r in rows if r[inc_idx] is not None)
+                if new_max_watermark is None or (batch_max is not None and batch_max > new_max_watermark):
+                    new_max_watermark = batch_max
+            
+            rows_with_etl = [r + (now, now) for r in rows]
             extras.execute_values(pg_cursor, insert_sql, rows_with_etl)
             inserted += len(rows)
-            if inserted % (BATCH_SIZE * 5) == 0:  # Log every 50k rows
-                logging.info(f"  ... {inserted} rows migrated so far")
+            
+            if inserted % (BATCH_SIZE * 20) == 0:
+                logging.info(f"  ... {inserted} rows processed so far")
+            logging.info(f"  [{table_name}] ... processed {inserted} rows")
+
+        # 6. Finalize
+        if inserted > 0 and inc_col and new_max_watermark:
+            w_type = 'TIMESTAMP' if hasattr(new_max_watermark, 'strftime') else 'ID'
+            update_watermark(pg_cursor, table_name, new_max_watermark, w_type)
         
         pg_conn.commit()
-        logging.info(f"  Successfully {decision} {inserted} rows.")
+        result['status'] = 'SUCCESS'
+        result['rows'] = inserted
+        result['duration'] = round(time.time() - start_time, 2)
+        logging.info(f"  [{table_name}] COMPLETED: {inserted} rows in {result['duration']}s")
+        return result
 
-    except (Exception, KeyboardInterrupt) as e:
+    except Exception as e:
         pg_conn.rollback()
-        logging.error(f"  {table_name} ABORTED/FAILED: {e}")
-        if isinstance(e, KeyboardInterrupt):
-            logging.warning("  Detected User Interrupt. Rolling back current table transaction...")
-            raise e # Re-raise to stop the whole script if needed
+        logging.error(f"  [{table_name}] FAILED: {e}")
+        result['status'] = 'FAILED'
+        result['error'] = str(e)
+        result['duration'] = round(time.time() - start_time, 2)
+        return result
     finally:
         ora_cursor.close()
         pg_cursor.close()
 
 if __name__ == '__main__':
-    logging.info(f"{'Table':<25} | {'PG Rows':>9} | {'Ora MaxDate':<36} | {'ETL Updated':<24} | Decision")
-    logging.info("-" * 115)
     ora, pg = None, None
     try:
         ora = oracledb.connect(**ORACLE_CONFIG)
         pg = psycopg2.connect(PG_CONFIG)
+        
+        results = []
         for t in TABLES_TO_MIGRATE:
-            migrate_table(ora, pg, t)
+            res = migrate_table(ora, pg, t)
+            results.append(res)
+            
+        # Summary Report
+        logging.info("\n" + "="*80)
+        logging.info("FINAL MIGRATION SUMMARY")
+        logging.info("="*80)
+        logging.info(f"{'Table':<25} | {'Status':<10} | {'Rows':>10} | {'Duration':>8}")
+        logging.info("-" * 80)
+        
+        total_rows = 0
+        success_count = 0
+        for r in results:
+            status = r['status']
+            rows = r['rows']
+            duration = f"{r['duration']}s"
+            logging.info(f"{r['table']:<25} | {status:<10} | {rows:>10} | {duration:>8}")
+            if status == 'SUCCESS':
+                success_count += 1
+                total_rows += rows
+        
+        logging.info("-" * 80)
+        logging.info(f"Total Tables Processed: {len(results)}")
+        logging.info(f"Success: {success_count} | Failed: {len(results) - success_count}")
+        logging.info(f"Total Rows Migrated: {total_rows}")
+        logging.info("="*80)
+
     except Exception as e:
-        logging.error(f"Migration error: {e}")
+        logging.error(f"Critical Migration error: {e}")
     finally:
         if ora: ora.close()
         if pg: pg.close()
