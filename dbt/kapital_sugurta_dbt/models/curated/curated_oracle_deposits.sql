@@ -6,7 +6,7 @@ WITH source_data AS (
         d.depdate_from,
         d.depdate_to,
         d.val_type,
-        "raw".kontragent_name(d.client_id) AS partner_name,
+        knt.tb_orgname AS partner_name,
         CASE 
             WHEN d.val_type = 2 THEN 'Foreign Currency Deposits'
             ELSE 'Non-Foreign Currency Deposits'
@@ -14,6 +14,8 @@ WITH source_data AS (
     FROM {{ source('raw', 'ins_invdep_oracle') }} d
     LEFT JOIN {{ source('raw', 'p_sp_currency_oracle') }} c
            ON d.val_type = c.sp_id
+    LEFT JOIN {{ source('raw', 'ins_kontragent_oracle') }} knt
+           ON d.client_id = knt.tb_id
 )
 
 SELECT 

@@ -3,7 +3,7 @@
 WITH source_data AS (
     SELECT
         i.ins_id,
-        "raw".kontragent_name(i.client_id) AS client_name,
+        knt.tb_orgname AS client_name,
         i.loan_num,
         i.dog_num,
         i.dog_date,
@@ -19,6 +19,8 @@ WITH source_data AS (
         i.status,
         i.close_date
     FROM {{ source('raw', 'ins_invloan_oracle') }} i
+    LEFT JOIN {{ source('raw', 'ins_kontragent_oracle') }} knt
+           ON i.client_id = knt.tb_id
 )
 
 SELECT 
