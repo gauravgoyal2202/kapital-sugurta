@@ -45,12 +45,41 @@ def main():
     engine_url = f"postgresql://{pg_user}:{pg_pass_encoded}@{pg_host}:{pg_port}/{pg_db}"
     engine = create_engine(engine_url)
     
-    # Define source file path
-    excel_path = os.path.join(BASE_DIR, 'excel_drop', 'Solvency Adequacy', 'Solvency Adequacy.xlsx')
-    
-    if not os.path.exists(excel_path):
-        logging.error(f"Excel file not found at: {excel_path}")
+    # Define source file path from Google Drive
+    gdrive_link = os.getenv('GDRIVE_SOLVENCY_ADEQUACY_LINK')
+    if not gdrive_link:
+        logging.error("GDRIVE_SOLVENCY_ADEQUACY_LINK not found in .env")
         sys.exit(1)
+
+    import gdown
+    import glob
+    import shutil
+    
+    gdrive_download_dir = os.path.join(BASE_DIR, 'excel_drop', 'gdrive_solvency')
+    # Clear directory to ensure we only process the latest download
+    if os.path.exists(gdrive_download_dir):
+        shutil.rmtree(gdrive_download_dir)
+    os.makedirs(gdrive_download_dir, exist_ok=True)
+    
+    logging.info(f"Downloading Google Drive folder from {gdrive_link}...")
+    try:
+        cwd = os.getcwd()
+        os.chdir(gdrive_download_dir)
+        gdown.download_folder(gdrive_link, quiet=True, use_cookies=False)
+        os.chdir(cwd)
+    except Exception as e:
+        logging.error(f"Failed to download from Google Drive: {e}", exc_info=True)
+        sys.exit(1)
+
+    search_pattern = os.path.join(gdrive_download_dir, '**', '*.xlsx')
+    excel_files = glob.glob(search_pattern, recursive=True)
+    
+    if not excel_files:
+        logging.error(f"No Excel file found for Solvency Adequacy in downloaded Drive folder.")
+        sys.exit(1)
+        
+    excel_path = excel_files[0]
+    logging.info(f"Found Excel file: {excel_path}")
         
     try:
         # Read Excel: row 1 is header (header=0 in pandas), row 2 is data
@@ -77,6 +106,11 @@ def main():
             index=False
         )
         logging.info("Data dumped to database successfully.")
+        
+        if os.path.exists(gdrive_download_dir):
+            shutil.rmtree(gdrive_download_dir)
+            logging.info(f"Cleaned up temporary download directory: {gdrive_download_dir}")
+        
         
     except Exception as e:
         logging.error(f"Failed to load Solvency Adequacy data: {e}", exc_info=True)

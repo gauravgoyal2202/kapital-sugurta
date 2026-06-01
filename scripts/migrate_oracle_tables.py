@@ -348,7 +348,7 @@ def migrate_table(ora_conn, pg_conn, table_name):
             
             if inserted % (BATCH_SIZE * 20) == 0:
                 logging.info(f"  ... {inserted} rows processed so far")
-            logging.info(f"  [{table_name}] ... processed {inserted} rows")
+            #logging.info(f"  [{table_name}] ... processed {inserted} rows")
 
         # 6. Finalize
         if inserted > 0 and inc_col and new_max_watermark:

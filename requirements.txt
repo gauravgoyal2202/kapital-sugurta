@@ -1,10 +1,10 @@
 requests==2.33.1
 oracledb==3.4.2
 SQLAlchemy==2.0.49
-psycopg2==2.9.12
 psycopg2-binary==2.9.11
-pandas==3.0.2
+pandas>=2.0.0
 openpyxl==3.1.5
 dbt-postgres==1.10.0
 great_expectations==1.17.1
 python-dotenv==1.2.2
+gdown

@@ -40,12 +40,7 @@ log = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-EXCEL_PATH = os.path.join(
-    BASE_DIR,
-    "excel_drop",
-    "market_share",
-    "Страх отчет(I чорак 2025 йил ) uz.xlsx",
-)
+
 SHEET_NAME = "1.4"
 
 # Rows (0-based pandas index) that are header / title — skip them for insert
@@ -60,31 +55,27 @@ INSERT INTO {SCHEMA}.{TABLE} (
     source_sheet_name,
     excel_row_number,
     insurance_type_name,
-    total_premium_2024,
-    total_premium_2025,
+    report_year,
+    total_premium,
     total_premium_change_pct,
-    claims_paid_2024,
-    claims_paid_2025,
+    claims_paid,
     claims_paid_change_pct,
-    insurance_liabilities_2024,
-    insurance_liabilities_2025,
+    insurance_liabilities,
     liabilities_change_pct
 ) VALUES (
     %(source_file_name)s,
     %(source_sheet_name)s,
     %(excel_row_number)s,
     %(insurance_type_name)s,
-    %(total_premium_2024)s,
-    %(total_premium_2025)s,
+    %(report_year)s,
+    %(total_premium)s,
     %(total_premium_change_pct)s,
-    %(claims_paid_2024)s,
-    %(claims_paid_2025)s,
+    %(claims_paid)s,
     %(claims_paid_change_pct)s,
-    %(insurance_liabilities_2024)s,
-    %(insurance_liabilities_2025)s,
+    %(insurance_liabilities)s,
     %(liabilities_change_pct)s
 )
-ON CONFLICT (source_file_name, excel_row_number) DO NOTHING
+ON CONFLICT (source_file_name, excel_row_number, report_year) DO NOTHING
 """
 
 DDL = f"""
@@ -94,17 +85,15 @@ CREATE TABLE IF NOT EXISTS {SCHEMA}.{TABLE} (
     source_sheet_name           VARCHAR(100),
     excel_row_number            INTEGER,
     insurance_type_name         VARCHAR(500),
-    total_premium_2024          NUMERIC(20,3),
-    total_premium_2025          NUMERIC(20,3),
+    report_year                 INTEGER,
+    total_premium               NUMERIC(20,3),
     total_premium_change_pct    VARCHAR(20),
-    claims_paid_2024            NUMERIC(20,3),
-    claims_paid_2025            NUMERIC(20,3),
+    claims_paid                 NUMERIC(20,3),
     claims_paid_change_pct      VARCHAR(20),
-    insurance_liabilities_2024  NUMERIC(20,3),
-    insurance_liabilities_2025  NUMERIC(20,3),
+    insurance_liabilities       NUMERIC(20,3),
     liabilities_change_pct      VARCHAR(20),
     loaded_at                   TIMESTAMPTZ DEFAULT NOW(),
-    UNIQUE (source_file_name, excel_row_number)
+    UNIQUE (source_file_name, excel_row_number, report_year)
 );
 """
 
@@ -218,29 +207,39 @@ def transform_rows(df, filename):
             skipped += 1
             continue
 
-        record = {
+        insurance_type = clean_pct(row.iloc[0]) if pd.notna(row.iloc[0]) and str(row.iloc[0]).strip() not in ("", "nan") else None
+
+        # 2024 Record
+        record_2024 = {
             "source_file_name": filename,
             "source_sheet_name": SHEET_NAME,
             "excel_row_number": int(idx),
-            # Col 0 – insurance type name (keep as string)
-            "insurance_type_name":  clean_pct(row.iloc[0]) if pd.notna(row.iloc[0]) and str(row.iloc[0]).strip() not in ("", "nan") else None,
-            # Numeric columns
-            "total_premium_2024":         clean_numeric(row.iloc[1]),
-            "total_premium_2025":         clean_numeric(row.iloc[2]),
-            # Percent strings
-            "total_premium_change_pct":   clean_pct(row.iloc[3]),
-            # Numeric columns
-            "claims_paid_2024":           clean_numeric(row.iloc[4]),
-            "claims_paid_2025":           clean_numeric(row.iloc[5]),
-            # Percent strings
-            "claims_paid_change_pct":     clean_pct(row.iloc[6]),
-            # Numeric columns
-            "insurance_liabilities_2024": clean_numeric(row.iloc[7]),
-            "insurance_liabilities_2025": clean_numeric(row.iloc[8]),
-            # Percent strings
-            "liabilities_change_pct":     clean_pct(row.iloc[9]),
+            "insurance_type_name": insurance_type,
+            "report_year": 2024,
+            "total_premium": clean_numeric(row.iloc[1]),
+            "total_premium_change_pct": None,
+            "claims_paid": clean_numeric(row.iloc[4]),
+            "claims_paid_change_pct": None,
+            "insurance_liabilities": clean_numeric(row.iloc[7]),
+            "liabilities_change_pct": None,
         }
-        records.append(record)
+        records.append(record_2024)
+
+        # 2025 Record
+        record_2025 = {
+            "source_file_name": filename,
+            "source_sheet_name": SHEET_NAME,
+            "excel_row_number": int(idx),
+            "insurance_type_name": insurance_type,
+            "report_year": 2025,
+            "total_premium": clean_numeric(row.iloc[2]),
+            "total_premium_change_pct": clean_pct(row.iloc[3]),
+            "claims_paid": clean_numeric(row.iloc[5]),
+            "claims_paid_change_pct": clean_pct(row.iloc[6]),
+            "insurance_liabilities": clean_numeric(row.iloc[8]),
+            "liabilities_change_pct": clean_pct(row.iloc[9]),
+        }
+        records.append(record_2025)
 
     log.info(f"Header rows skipped: {skipped}")
     log.info(f"Data rows to insert: {len(records)}")
@@ -283,20 +282,50 @@ def main():
     log.info("ETL START: raw_load_market_share")
     log.info("=" * 60)
 
-    # Validate source file exists
-    if not os.path.exists(EXCEL_PATH):
-        log.error(f"Excel file not found: {EXCEL_PATH}")
-        raise FileNotFoundError(EXCEL_PATH)
-
-    filename = os.path.basename(EXCEL_PATH)
-    log.info(f"Processing file: {filename}")
-
-    # DB setup
+    # DB setup (loads .env)
     conn = get_db_connection()
     create_table(conn)
 
+    gdrive_link = os.getenv('GDRIVE_MARKET_SHARE_LINK')
+    if not gdrive_link:
+        log.error("GDRIVE_MARKET_SHARE_LINK not found in .env")
+        raise EnvironmentError("GDRIVE_MARKET_SHARE_LINK missing")
+
+    import gdown
+    import glob
+    import shutil
+    
+    gdrive_download_dir = os.path.join(BASE_DIR, 'excel_drop', 'gdrive_market_share')
+    # Clear directory to ensure we only process the latest download
+    if os.path.exists(gdrive_download_dir):
+        shutil.rmtree(gdrive_download_dir)
+    os.makedirs(gdrive_download_dir, exist_ok=True)
+    
+    log.info(f"Downloading Google Drive folder from {gdrive_link}...")
+    try:
+        cwd = os.getcwd()
+        os.chdir(gdrive_download_dir)
+        gdown.download_folder(gdrive_link, quiet=True, use_cookies=False)
+        os.chdir(cwd)
+    except Exception as e:
+        log.error(f"Failed to download from Google Drive: {e}", exc_info=True)
+        raise
+
+    search_pattern = os.path.join(gdrive_download_dir, '**', '*.xlsx')
+    excel_files = glob.glob(search_pattern, recursive=True)
+    
+    if not excel_files:
+        log.error(f"No Excel file found for market_share in downloaded Drive folder.")
+        raise FileNotFoundError("market_share Excel file missing")
+        
+    excel_path = excel_files[0]
+    log.info(f"Found Excel file: {excel_path}")
+
+    filename = os.path.basename(excel_path)
+    log.info(f"Processing file: {filename}")
+
     # Extract
-    df = read_excel(EXCEL_PATH)
+    df = read_excel(excel_path)
     total_rows = len(df)
     log.info(f"Total rows read from Excel: {total_rows}")
 
@@ -314,6 +343,10 @@ def main():
             log.warning(f"  excel_row_number={f['excel_row_number']}: {f['error']}")
 
     conn.close()
+
+    if os.path.exists(gdrive_download_dir):
+        shutil.rmtree(gdrive_download_dir)
+        log.info(f"Cleaned up temporary download directory: {gdrive_download_dir}")
 
     summary = (
         f"ETL complete. {inserted} rows loaded into "
