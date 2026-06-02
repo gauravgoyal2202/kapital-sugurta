@@ -4,7 +4,7 @@
   Dashboard 11 — Bottom Section: Fully Standardized Multi-Tab Summary
   ------------------------------------------------------------------
   Normalized format with 'report_year' and 'report_quarter' columns.
-  Supports 'Market Share' and 'Combined Ratio' tabs.
+  Supports 'Market Share' and 'Profitability' tabs.
 */
 
 WITH monthly_base AS (
@@ -20,22 +20,22 @@ raw_summary AS (
         report_year,
         EXTRACT(QUARTER FROM report_month)::INT as report_quarter,
         report_month,
-        MAX(CASE WHEN report_year = 2024 THEN mkt_prem_2024_bn ELSE mkt_prem_2025_bn END) as market_value,
-        SUM(co_premium_bn) as company_value
+        MAX(CASE WHEN report_year = EXTRACT(YEAR FROM CURRENT_DATE) - 1 THEN mkt_prem_prev_year_bn ELSE mkt_prem_curr_year_bn END) as market_value,
+        SUM(co_premium) as company_value
     FROM monthly_base
     GROUP BY 1, 2, 3, 4, 5
     
     UNION ALL
     
-    -- Combined Ratio Measurements
+    -- Profitability Measurements
     SELECT
-        'Combined Ratio' as category,
+        'Profitability' as category,
         priority_area,
         report_year,
         EXTRACT(QUARTER FROM report_month)::INT as report_quarter,
         report_month,
         NULL::NUMERIC as market_value,
-        AVG(combined_ratio_pct) as company_value
+        AVG(profitability_pct) as company_value
     FROM monthly_base
     GROUP BY 1, 2, 3, 4, 5
 ),

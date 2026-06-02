@@ -41,12 +41,11 @@ channel_dim AS (
 ),
 
 -- ================================================================
--- SECTION 2: MARKET DATA (Unpivoted)
+-- SECTION 2: MARKET DATA (Already long/unpivoted via report_year column)
 -- ================================================================
 market_long AS (
-    -- 2024 Market Data
     SELECT
-        2024 AS report_year,
+        report_year,
         CASE
             WHEN insurance_type_name ILIKE '%Majburiy sug%'           THEN 'Compulsory'
             WHEN insurance_type_name ILIKE '%majburiy sug%'           THEN 'Compulsory'
@@ -58,32 +57,9 @@ market_long AS (
             WHEN insurance_type_name ILIKE '%ixtiyoriy%'              THEN 'Voluntary'
             ELSE NULL
         END AS insurance_type,
-        SUM(COALESCE(total_premium_2024,         0)) / 1000.0 AS mkt_prem_bn,
-        SUM(COALESCE(claims_paid_2024,           0)) / 1000.0 AS mkt_claims_bn,
-        SUM(COALESCE(insurance_liabilities_2024, 0)) / 1000.0 AS mkt_liab_bn
-    FROM {{ source('raw', 'market_share_insurance_class_stats') }}
-    WHERE insurance_type_name IS NOT NULL
-    GROUP BY 1, 2
-
-    UNION ALL
-
-    -- 2025 Market Data
-    SELECT
-        2025 AS report_year,
-        CASE
-            WHEN insurance_type_name ILIKE '%Majburiy sug%'           THEN 'Compulsory'
-            WHEN insurance_type_name ILIKE '%majburiy sug%'           THEN 'Compulsory'
-            WHEN insurance_type_name ILIKE '%Ixtiyoriy sug%'          THEN 'Voluntary'
-            WHEN insurance_type_name ILIKE '%ixtiyoriy sug%'          THEN 'Voluntary'
-            WHEN insurance_type_name ILIKE '%fuqarolik javobgarlik%'  THEN 'Compulsory'
-            WHEN insurance_type_name ILIKE '%OSAGO%'                  THEN 'Compulsory'
-            WHEN insurance_type_name ILIKE '%majburiy%'               THEN 'Compulsory'
-            WHEN insurance_type_name ILIKE '%ixtiyoriy%'              THEN 'Voluntary'
-            ELSE NULL
-        END AS insurance_type,
-        SUM(COALESCE(total_premium_2025,         0)) / 1000.0 AS mkt_prem_bn,
-        SUM(COALESCE(claims_paid_2025,           0)) / 1000.0 AS mkt_claims_bn,
-        SUM(COALESCE(insurance_liabilities_2025, 0)) / 1000.0 AS mkt_liab_bn
+        SUM(COALESCE(total_premium,         0)) AS mkt_prem,
+        SUM(COALESCE(claims_paid,           0)) AS mkt_claims,
+        SUM(COALESCE(insurance_liabilities, 0)) AS mkt_liab
     FROM {{ source('raw', 'market_share_insurance_class_stats') }}
     WHERE insurance_type_name IS NOT NULL
     GROUP BY 1, 2

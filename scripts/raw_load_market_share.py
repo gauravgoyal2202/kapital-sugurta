@@ -87,11 +87,11 @@ CREATE TABLE IF NOT EXISTS {SCHEMA}.{TABLE} (
     insurance_type_name         VARCHAR(500),
     report_year                 INTEGER,
     total_premium               NUMERIC(20,3),
-    total_premium_change_pct    VARCHAR(20),
+    total_premium_change_pct    VARCHAR(100),
     claims_paid                 NUMERIC(20,3),
-    claims_paid_change_pct      VARCHAR(20),
+    claims_paid_change_pct      VARCHAR(100),
     insurance_liabilities       NUMERIC(20,3),
-    liabilities_change_pct      VARCHAR(20),
+    liabilities_change_pct      VARCHAR(100),
     loaded_at                   TIMESTAMPTZ DEFAULT NOW(),
     UNIQUE (source_file_name, excel_row_number, report_year)
 );
@@ -172,6 +172,10 @@ def create_table(conn):
     """Run the CREATE TABLE IF NOT EXISTS DDL."""
     with conn.cursor() as cur:
         cur.execute(DDL)
+        # Safely expand column sizes in case they were created as VARCHAR(20)
+        cur.execute(f"ALTER TABLE {SCHEMA}.{TABLE} ALTER COLUMN total_premium_change_pct TYPE VARCHAR(100);")
+        cur.execute(f"ALTER TABLE {SCHEMA}.{TABLE} ALTER COLUMN claims_paid_change_pct TYPE VARCHAR(100);")
+        cur.execute(f"ALTER TABLE {SCHEMA}.{TABLE} ALTER COLUMN liabilities_change_pct TYPE VARCHAR(100);")
     conn.commit()
     log.info(f"Table {SCHEMA}.{TABLE} is ready.")
 
@@ -199,8 +203,33 @@ def transform_rows(df, filename):
     Convert the DataFrame rows into a list of dicts ready for INSERT.
     Skips the 4 header/title rows; processes all remaining rows.
     """
+    import re
+    
     records = []
     skipped = 0
+
+    prev_year = 2024
+    curr_year = 2025
+
+    # Dynamically extract years from the header rows (e.g. "1/1/2026")
+    for idx in HEADER_ROW_INDICES:
+        if idx < len(df):
+            # Check column 1 (Previous year)
+            val1 = str(df.iloc[idx, 1])
+            m1 = re.search(r'(20\d{2})', val1)
+            if m1:
+                y = int(m1.group(1))
+                # If date is '1/1/YYYY', the data is actually for YYYY-1
+                prev_year = y - 1 if '1/1/' in val1 or '01.01.' in val1 else y
+
+            # Check column 2 (Current year)
+            val2 = str(df.iloc[idx, 2])
+            m2 = re.search(r'(20\d{2})', val2)
+            if m2:
+                y = int(m2.group(1))
+                curr_year = y - 1 if '1/1/' in val2 or '01.01.' in val2 else y
+
+    log.info(f"Extracted previous year: {prev_year}, current year: {curr_year}")
 
     for idx, row in df.iterrows():
         if idx in HEADER_ROW_INDICES:
@@ -209,13 +238,13 @@ def transform_rows(df, filename):
 
         insurance_type = clean_pct(row.iloc[0]) if pd.notna(row.iloc[0]) and str(row.iloc[0]).strip() not in ("", "nan") else None
 
-        # 2024 Record
-        record_2024 = {
+        # Previous Year Record
+        record_prev = {
             "source_file_name": filename,
             "source_sheet_name": SHEET_NAME,
             "excel_row_number": int(idx),
             "insurance_type_name": insurance_type,
-            "report_year": 2024,
+            "report_year": prev_year,
             "total_premium": clean_numeric(row.iloc[1]),
             "total_premium_change_pct": None,
             "claims_paid": clean_numeric(row.iloc[4]),
@@ -223,15 +252,15 @@ def transform_rows(df, filename):
             "insurance_liabilities": clean_numeric(row.iloc[7]),
             "liabilities_change_pct": None,
         }
-        records.append(record_2024)
+        records.append(record_prev)
 
-        # 2025 Record
-        record_2025 = {
+        # Current Year Record
+        record_curr = {
             "source_file_name": filename,
             "source_sheet_name": SHEET_NAME,
             "excel_row_number": int(idx),
             "insurance_type_name": insurance_type,
-            "report_year": 2025,
+            "report_year": curr_year,
             "total_premium": clean_numeric(row.iloc[2]),
             "total_premium_change_pct": clean_pct(row.iloc[3]),
             "claims_paid": clean_numeric(row.iloc[5]),
@@ -239,7 +268,7 @@ def transform_rows(df, filename):
             "insurance_liabilities": clean_numeric(row.iloc[8]),
             "liabilities_change_pct": clean_pct(row.iloc[9]),
         }
-        records.append(record_2025)
+        records.append(record_curr)
 
     log.info(f"Header rows skipped: {skipped}")
     log.info(f"Data rows to insert: {len(records)}")

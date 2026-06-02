@@ -80,7 +80,9 @@ TABLES_TO_MIGRATE = [
     'sp_reinsurance_foreign_org',
     'sp_country',
     'INS_BANK_PTURI',
-    'INS_OSGO'  
+    'INS_OSGO',
+    'INS_LINK_KLASS',
+    'INS_LINK'
 ]
 
 BATCH_SIZE = 10000
@@ -161,7 +163,8 @@ INCREMENTAL_CONFIG = {
     'tb_oplata': 'TB_DATEOPL',
     'tb_polis': 'TB_DATE_BEGIN',
     'TB_USERS': 'TB_VIDANDATE',
-    'INS_BANK_PTURI': 'CREATED_DATE'
+    'INS_BANK_PTURI': 'CREATED_DATE',
+    'INS_OSGO': 'INS_ID'
 }
 
 def init_watermark_table(pg_cursor):
