@@ -57,9 +57,9 @@ mkt_agg AS (
             ELSE 'Other'
         END AS priority_area,
         SUM(CASE WHEN report_year = EXTRACT(YEAR FROM CURRENT_DATE)::INT - 1
-                 THEN COALESCE(total_premium, 0) ELSE 0 END) / 1000.0 AS mkt_prem_prev_year_bn,
+                 THEN COALESCE(total_premium, 0) ELSE 0 END) AS mkt_prem_prev_year,
         SUM(CASE WHEN report_year = EXTRACT(YEAR FROM CURRENT_DATE)::INT
-                 THEN COALESCE(total_premium, 0) ELSE 0 END) / 1000.0 AS mkt_prem_curr_year_bn
+                 THEN COALESCE(total_premium, 0) ELSE 0 END) AS mkt_prem_curr_year
     FROM {{ source('raw', 'market_share_insurance_class_stats') }}
     GROUP BY 1
 )
@@ -85,16 +85,16 @@ SELECT
         ELSE 0
     END AS profitability_pct,
 
-    m.mkt_prem_prev_year_bn,
-    m.mkt_prem_curr_year_bn,
+    m.mkt_prem_prev_year,
+    m.mkt_prem_curr_year,
 
     CASE
         WHEN ab.report_year = EXTRACT(YEAR FROM CURRENT_DATE) - 1
-         AND m.mkt_prem_prev_year_bn > 0
-        THEN ROUND((ab.oplsum / m.mkt_prem_prev_year_bn * 100)::NUMERIC, 2)
+         AND m.mkt_prem_prev_year > 0
+        THEN ROUND((ab.oplsum / m.mkt_prem_prev_year * 100)::NUMERIC, 2)
         WHEN ab.report_year = EXTRACT(YEAR FROM CURRENT_DATE)
-         AND m.mkt_prem_curr_year_bn > 0
-        THEN ROUND((ab.oplsum / m.mkt_prem_curr_year_bn * 100)::NUMERIC, 2)
+         AND m.mkt_prem_curr_year > 0
+        THEN ROUND((ab.oplsum / m.mkt_prem_curr_year * 100)::NUMERIC, 2)
         ELSE NULL
     END AS company_market_share_pct
 

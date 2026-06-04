@@ -18,8 +18,8 @@ SELECT
     co_fifty,
     co_ras,
     profitability_pct,
-    mkt_prem_prev_year_bn,
-    mkt_prem_curr_year_bn,
+    mkt_prem_prev_year,
+    mkt_prem_curr_year,
     company_market_share_pct,
     'Actual' AS scenario
 FROM {{ ref('mart_commercial_development_priority_areas_base') }}
