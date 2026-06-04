@@ -1,22 +1,40 @@
 {{ config(materialized='table') }}
 
 WITH date_bounds AS (
-    -- Dynamically find the earliest date in your raw data
-    SELECT 
-        MIN(deposit_start_date) AS min_date
-    FROM {{ ref('curated_oracle_deposits') }}
+    -- Find the earliest date across all sources
+    SELECT MIN(min_date) AS start_date
+    FROM (
+        SELECT MIN(deposit_start_date) AS min_date FROM {{ ref('curated_oracle_deposits') }}
+        UNION ALL
+        SELECT MIN(loan_start_date) AS min_date FROM {{ ref('curated_oracle_loans') }}
+        UNION ALL
+        SELECT MIN(report_date) AS min_date FROM {{ ref('curated_investment_activity') }}
+    ) t
 ),
 
 months AS (
     -- Dynamically generate an end-of-month date spine
     SELECT 
-        (DATE_TRUNC('month', dt) + INTERVAL '1 month' - INTERVAL '1 day')::DATE AS report_month
+        (DATE_TRUNC('month', t.dt) + INTERVAL '1 month' - INTERVAL '1 day')::DATE AS report_month
     FROM date_bounds,
     LATERAL generate_series(
-        DATE_TRUNC('month', min_date), 
+        DATE_TRUNC('month', COALESCE(start_date, '2020-01-01'::DATE)), 
         (DATE_TRUNC('year', CURRENT_DATE) + INTERVAL '1 year' - INTERVAL '1 day')::DATE, 
         INTERVAL '1 month'
-    ) AS dt
+    ) AS t(dt)
+),
+
+eom_kurs AS (
+    -- Get the last available exchange rate for each month
+    SELECT DISTINCT
+        (DATE_TRUNC('month', kurs_date) + INTERVAL '1 month' - INTERVAL '1 day')::DATE AS report_month,
+        LAST_VALUE(kurs_usd) OVER (
+            PARTITION BY DATE_TRUNC('month', kurs_date) 
+            ORDER BY kurs_date 
+            ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+        ) AS kurs_usd
+    FROM {{ source('raw', 'ins_kurs_oracle') }}
+    WHERE kurs_usd IS NOT NULL
 ),
 
 oracle_active_deposits AS (
@@ -30,12 +48,12 @@ oracle_active_deposits AS (
                 ELSE c.deposit_amount
             END
         ) AS portfolio_amount
-    FROM months m
-    LEFT JOIN {{ ref('curated_oracle_deposits') }} c
+    FROM {{ ref('curated_oracle_deposits') }} c
+    INNER JOIN months m
         ON c.deposit_start_date <= m.report_month
         AND (c.deposit_end_date IS NULL OR c.deposit_end_date > m.report_month)
-    LEFT JOIN {{ source('raw', 'ins_kurs_oracle') }} k
-        ON k.kurs_date::DATE = m.report_month
+    LEFT JOIN eom_kurs k
+        ON k.report_month = m.report_month
     WHERE c.partner_name IS NOT NULL
     GROUP BY 1, 2, 3
 ),
@@ -46,8 +64,8 @@ oracle_active_loans AS (
         'Other' AS portfolio_category,
         c.client_name AS partner_name,
         SUM(c.loan_amount) AS portfolio_amount
-    FROM months m
-    LEFT JOIN {{ ref('curated_oracle_loans') }} c
+    FROM {{ ref('curated_oracle_loans') }} c
+    INNER JOIN months m
         ON c.loan_start_date <= m.report_month
         AND (c.loan_end_date_actual IS NULL OR c.loan_end_date_actual >= m.report_month)
     WHERE c.client_name IS NOT NULL

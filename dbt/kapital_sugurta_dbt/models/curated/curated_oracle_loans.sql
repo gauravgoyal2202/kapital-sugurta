@@ -24,32 +24,34 @@ WITH source_data AS (
 )
 
 SELECT 
-    ins_id AS loan_id,
-    client_name,
-    loan_num AS loan_number,
-    dog_num AS contract_number,
-    dog_date AS contract_date,
-    loandate_from AS loan_start_date,
-    loandate_to AS loan_end_date,
-    loan_day AS loan_duration_days,
-    prof_rate AS interest_rate,
-    loan_sum AS loan_amount,
-    val_type_desc AS currency_type,
-    val_vozvrat_desc AS return_currency_type,
-    postup AS paid_amount,
-    kvipl AS payable_amount,
-    (kvipl - postup) AS remaining_balance,
+    s.ins_id AS loan_id,
+    COALESCE(m.standardized_partner_name, s.client_name) AS client_name,
+    s.loan_num AS loan_number,
+    s.dog_num AS contract_number,
+    s.dog_date AS contract_date,
+    s.loandate_from AS loan_start_date,
+    s.loandate_to AS loan_end_date,
+    s.loan_day AS loan_duration_days,
+    s.prof_rate AS interest_rate,
+    s.loan_sum AS loan_amount,
+    s.val_type_desc AS currency_type,
+    s.val_vozvrat_desc AS return_currency_type,
+    s.postup AS paid_amount,
+    s.kvipl AS payable_amount,
+    (s.kvipl - s.postup) AS remaining_balance,
     CASE 
-        WHEN NULLIF(kvipl, 0) = 0 THEN 0
-        ELSE (postup * 100.0) / kvipl 
+        WHEN NULLIF(s.kvipl, 0) = 0 THEN 0
+        ELSE (s.postup * 100.0) / s.kvipl 
     END AS repayment_progress_pct,
     CASE 
-        WHEN status = 0 THEN 'Актив'
-        WHEN status = 1 THEN 'Исполненный'
-        WHEN status = 2 THEN 'Досрочное погашение'
+        WHEN s.status = 0 THEN 'Актив'
+        WHEN s.status = 1 THEN 'Исполненный'
+        WHEN s.status = 2 THEN 'Досрочное погашение'
         ELSE ''
     END AS loan_status,
-    close_date AS loan_end_date_actual,
+    s.close_date AS loan_end_date_actual,
     'Actual' AS scenario,
     CURRENT_TIMESTAMP AS updated_at
-FROM source_data
+FROM source_data s
+LEFT JOIN {{ ref('partner_mapping') }} m
+    ON REGEXP_REPLACE(UPPER(s.client_name), '[^[:alnum:]]', '', 'g') = REGEXP_REPLACE(UPPER(m.raw_partner_name), '[^[:alnum:]]', '', 'g')

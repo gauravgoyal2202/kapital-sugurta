@@ -93,12 +93,27 @@ shares AS (
 -- =========================
 -- FINAL UNION
 -- =========================
-SELECT *, 'Actual' AS scenario, CURRENT_TIMESTAMP AS loaded_at, CURRENT_TIMESTAMP AS updated_at FROM bonds
-UNION ALL
-SELECT *, 'Actual' AS scenario, CURRENT_TIMESTAMP AS loaded_at, CURRENT_TIMESTAMP AS updated_at FROM deposits
-UNION ALL
-SELECT *, 'Actual' AS scenario, CURRENT_TIMESTAMP AS loaded_at, CURRENT_TIMESTAMP AS updated_at FROM fx_deposits
-UNION ALL
-SELECT *, 'Actual' AS scenario, CURRENT_TIMESTAMP AS loaded_at, CURRENT_TIMESTAMP AS updated_at FROM loans
-UNION ALL
-SELECT *, 'Actual' AS scenario, CURRENT_TIMESTAMP AS loaded_at, CURRENT_TIMESTAMP AS updated_at FROM shares
+, unioned AS (
+    SELECT *, 'Actual' AS scenario, CURRENT_TIMESTAMP AS loaded_at, CURRENT_TIMESTAMP AS updated_at FROM bonds
+    UNION ALL
+    SELECT *, 'Actual' AS scenario, CURRENT_TIMESTAMP AS loaded_at, CURRENT_TIMESTAMP AS updated_at FROM deposits
+    UNION ALL
+    SELECT *, 'Actual' AS scenario, CURRENT_TIMESTAMP AS loaded_at, CURRENT_TIMESTAMP AS updated_at FROM fx_deposits
+    UNION ALL
+    SELECT *, 'Actual' AS scenario, CURRENT_TIMESTAMP AS loaded_at, CURRENT_TIMESTAMP AS updated_at FROM loans
+    UNION ALL
+    SELECT *, 'Actual' AS scenario, CURRENT_TIMESTAMP AS loaded_at, CURRENT_TIMESTAMP AS updated_at FROM shares
+)
+
+SELECT 
+    u.report_date,
+    u.investment_type,
+    COALESCE(m.standardized_partner_name, u.partner_name) AS partner_name,
+    u.contract,
+    u.amount,
+    u.scenario,
+    u.loaded_at,
+    u.updated_at
+FROM unioned u
+LEFT JOIN {{ ref('partner_mapping') }} m
+    ON REGEXP_REPLACE(UPPER(u.partner_name), '[^[:alnum:]]', '', 'g') = REGEXP_REPLACE(UPPER(m.raw_partner_name), '[^[:alnum:]]', '', 'g')
