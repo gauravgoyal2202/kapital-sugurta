@@ -25,7 +25,7 @@ WITH source_data AS (
 
 SELECT 
     s.ins_id AS loan_id,
-    COALESCE(m.standardized_partner_name, s.client_name) AS client_name,
+    s.client_name AS partner_name,
     s.loan_num AS loan_number,
     s.dog_num AS contract_number,
     s.dog_date AS contract_date,
@@ -53,5 +53,3 @@ SELECT
     'Actual' AS scenario,
     CURRENT_TIMESTAMP AS updated_at
 FROM source_data s
-LEFT JOIN {{ ref('partner_mapping') }} m
-    ON REGEXP_REPLACE(UPPER(s.client_name), '[^[:alnum:]]', '', 'g') = REGEXP_REPLACE(UPPER(m.raw_partner_name), '[^[:alnum:]]', '', 'g')

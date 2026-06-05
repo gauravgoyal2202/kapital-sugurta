@@ -1,6 +1,15 @@
 {{ config(materialized='table') }}
 
-WITH date_bounds AS (
+WITH unique_partner_mapping AS (
+    -- Deduplicate partner mapping on the clean alphanumeric key to prevent duplicate matches and data inflation
+    SELECT 
+        REGEXP_REPLACE(UPPER(raw_partner_name), '[^[:alnum:]]', '', 'g') AS clean_raw_name,
+        MAX(standardized_partner_name) AS standardized_partner_name
+    FROM {{ ref('partner_mapping') }}
+    GROUP BY 1
+),
+
+date_bounds AS (
     -- Find the earliest date across all sources
     SELECT MIN(min_date) AS start_date
     FROM (
@@ -41,7 +50,7 @@ oracle_active_deposits AS (
     SELECT 
         m.report_month,
         'Deposits' AS portfolio_category,
-        c.partner_name,
+        COALESCE(pm.standardized_partner_name, c.partner_name) AS partner_name,
         SUM(
             CASE 
                 WHEN c.val_type = 2 THEN c.deposit_amount * k.kurs_usd
@@ -54,6 +63,8 @@ oracle_active_deposits AS (
         AND (c.deposit_end_date IS NULL OR c.deposit_end_date > m.report_month)
     LEFT JOIN eom_kurs k
         ON k.report_month = m.report_month
+    LEFT JOIN unique_partner_mapping pm
+        ON REGEXP_REPLACE(UPPER(c.partner_name), '[^[:alnum:]]', '', 'g') = pm.clean_raw_name
     WHERE c.partner_name IS NOT NULL
     GROUP BY 1, 2, 3
 ),
@@ -62,13 +73,15 @@ oracle_active_loans AS (
     SELECT 
         m.report_month,
         'Other' AS portfolio_category,
-        c.client_name AS partner_name,
+        COALESCE(pm.standardized_partner_name, c.partner_name) AS partner_name,
         SUM(c.loan_amount) AS portfolio_amount
     FROM {{ ref('curated_oracle_loans') }} c
     INNER JOIN months m
         ON c.loan_start_date <= m.report_month
         AND (c.loan_end_date_actual IS NULL OR c.loan_end_date_actual >= m.report_month)
-    WHERE c.client_name IS NOT NULL
+    LEFT JOIN unique_partner_mapping pm
+        ON REGEXP_REPLACE(UPPER(c.partner_name), '[^[:alnum:]]', '', 'g') = pm.clean_raw_name
+    WHERE c.partner_name IS NOT NULL
     GROUP BY 1, 2, 3
 ),
 
@@ -87,9 +100,11 @@ api_income_aggregated AS (
             WHEN c.investment_type = 'BOND' THEN 'Bonds'
             WHEN c.investment_type = 'LOAN' THEN 'Other'
         END AS portfolio_category,
-        c.partner_name,
+        COALESCE(pm.standardized_partner_name, c.partner_name) AS partner_name,
         SUM(c.amount) AS income_amount
     FROM {{ ref('curated_investment_activity') }} c
+    LEFT JOIN unique_partner_mapping pm
+        ON REGEXP_REPLACE(UPPER(c.partner_name), '[^[:alnum:]]', '', 'g') = pm.clean_raw_name
     WHERE c.partner_name IS NOT NULL
     GROUP BY 1, 2, 3
 ),

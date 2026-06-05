@@ -21,12 +21,10 @@ WITH source_data AS (
 SELECT 
     s.deposit_type,
     s.val_type,
-    COALESCE(m.standardized_partner_name, s.partner_name) AS partner_name,
+    s.partner_name,
     s.dep_sum AS deposit_amount,
     s.depdate_from AS deposit_start_date,
     s.depdate_to AS deposit_end_date,
     'Actual' AS scenario,
     CURRENT_TIMESTAMP AS updated_at
 FROM source_data s
-LEFT JOIN {{ ref('partner_mapping') }} m
-    ON REGEXP_REPLACE(UPPER(s.partner_name), '[^[:alnum:]]', '', 'g') = REGEXP_REPLACE(UPPER(m.raw_partner_name), '[^[:alnum:]]', '', 'g')
