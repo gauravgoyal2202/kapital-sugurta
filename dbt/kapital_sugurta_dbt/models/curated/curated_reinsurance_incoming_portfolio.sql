@@ -1,6 +1,5 @@
 WITH excel_source AS (
     SELECT * FROM {{ source('raw', 'reinsurance_incoming_portfolio') }}
-    WHERE EXTRACT(YEAR FROM contract_conclusion_date) < 2026
 ),
 
 oracle_source AS (
@@ -41,7 +40,6 @@ oracle_source AS (
     LEFT JOIN {{ source('raw', 'sp_reinsurance_brokers_oracle') }} brk ON brk.id = r.broker_id
     LEFT JOIN {{ source('raw', 'p_sp_currency_oracle') }} cur ON cur.sp_id = r.currency_id
     WHERE r.direction IN (2, 3) -- Incoming (Foreign/Local)
-      AND EXTRACT(YEAR FROM r.slip_date) >= 2026
 ),
 
 combined AS (

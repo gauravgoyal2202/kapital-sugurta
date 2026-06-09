@@ -114,8 +114,10 @@ SELECT
     b.product_name,
 
     -- ── Financial metrics (UZS) ──────────────────────────────────────────
-    ROUND(b.premium_uzs::NUMERIC,       2)                          AS premium_uzs,
-    ROUND(b.commission_uzs::NUMERIC,    2)                          AS commission_uzs,
+    ROUND(b.premium_uzs::NUMERIC,       2)                          AS premium_cy,
+    ROUND(COALESCE(LAG(b.premium_uzs, 12) OVER (PARTITION BY b.user_id, b.channels, b.insurance_type, b.product_category, b.product_name ORDER BY b.month), 0)::NUMERIC, 2) AS premium_py,
+    ROUND(b.commission_uzs::NUMERIC,    2)                          AS commission_cy,
+    ROUND(COALESCE(LAG(b.commission_uzs, 12) OVER (PARTITION BY b.user_id, b.channels, b.insurance_type, b.product_category, b.product_name ORDER BY b.month), 0)::NUMERIC, 2) AS commission_py,
     ROUND(b.claims_uzs::NUMERIC,        2)                          AS claims_uzs,
     ROUND(b.motivation_uzs::NUMERIC,    2)                          AS motivation_uzs,
     ROUND(b.reinsurance_uzs::NUMERIC,   2)                          AS reinsurance_uzs,
