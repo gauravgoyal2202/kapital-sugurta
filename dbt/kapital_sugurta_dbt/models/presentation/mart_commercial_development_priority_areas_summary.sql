@@ -1,81 +1,87 @@
 {{ config(materialized='table') }}
 
 /*
-  Dashboard 11 — Bottom Section: Fully Standardized Multi-Tab Summary
+  Dashboard 11 — Bottom Section: Fully Generic Priority Areas Summary
   ------------------------------------------------------------------
-  Normalized format with 'report_year' and 'report_quarter' columns.
-  Supports 'Market Share' and 'Profitability' tabs.
+  Groups by report_month, report_year, report_quarter, priority_area,
+  insurance_type, product_category, and product_name.
+  Tracks company premium, net profit, and their respective YoY growth percentages.
 */
 
-WITH monthly_base AS (
-    SELECT * FROM {{ ref('mart_commercial_development_priority_areas_base') }}
-),
-
--- 1. Aggregate and Normalize (One row per Tab, Area, Year, Quarter, Month)
-raw_summary AS (
-    -- Market Share Measurements
+WITH base_data AS (
     SELECT
-        'Market Share' as category,
-        priority_area,
-        report_year,
-        EXTRACT(QUARTER FROM report_month)::INT as report_quarter,
         report_month,
-        MAX(CASE WHEN report_year = EXTRACT(YEAR FROM CURRENT_DATE) - 1 THEN mkt_prem_prev_year_bn ELSE mkt_prem_curr_year_bn END) as market_value,
-        SUM(co_premium) as company_value
-    FROM monthly_base
-    GROUP BY 1, 2, 3, 4, 5
-    
-    UNION ALL
-    
-    -- Profitability Measurements
-    SELECT
-        'Profitability' as category,
-        priority_area,
         report_year,
-        EXTRACT(QUARTER FROM report_month)::INT as report_quarter,
-        report_month,
-        NULL::NUMERIC as market_value,
-        AVG(profitability_pct) as company_value
-    FROM monthly_base
-    GROUP BY 1, 2, 3, 4, 5
+        EXTRACT(QUARTER FROM report_month)::INT AS report_quarter,
+        priority_area,
+        insurance_type,
+        product_category,
+        product_name,
+        SUM(co_premium) AS co_premium,
+        SUM(co_claims) AS co_claims,
+        SUM(co_expenses) AS co_expenses,
+        SUM(co_fifty) AS co_fifty,
+        SUM(co_ras) AS co_ras,
+        SUM(co_premium - co_expenses - co_claims - co_fifty - co_ras) AS co_net_profit
+    FROM {{ ref('mart_commercial_development_priority_areas_base') }}
+    GROUP BY 1, 2, 3, 4, 5, 6, 7
 ),
 
 calculations AS (
     SELECT
-        *,
-        -- Share / Percentage Calculations
-        CASE 
-            WHEN category = 'Market Share' AND market_value > 0 THEN (company_value / market_value) * 100 
-            ELSE company_value -- For CR tab, the company_value is already a %
-        END as company_share_pct,
+        report_month,
+        report_year,
+        report_quarter,
+        priority_area,
+        insurance_type,
+        product_category,
+        product_name,
         
-        -- YoY Comparison Logic
-        LAG(company_value) OVER (PARTITION BY category, priority_area, EXTRACT(MONTH FROM report_month) ORDER BY report_year) as prev_year_val
-    FROM raw_summary
+        -- CY metrics
+        co_premium AS company_premium_cy,
+        co_net_profit AS company_net_profit_cy,
+        
+        -- PY metrics (12-month lag partitioned by dimensions)
+        COALESCE(LAG(co_premium, 12) OVER (PARTITION BY priority_area, insurance_type, product_category, product_name ORDER BY report_month), 0) AS company_premium_py,
+        COALESCE(LAG(co_net_profit, 12) OVER (PARTITION BY priority_area, insurance_type, product_category, product_name ORDER BY report_month), 0) AS company_net_profit_py,
+        
+        -- Profitability %
+        CASE 
+            WHEN co_premium > 0 
+            THEN ROUND(((co_premium - co_expenses - co_claims - co_fifty) / co_premium * 100)::NUMERIC, 2)
+            ELSE 0 
+        END AS profitability_pct
+        
+    FROM base_data
 )
 
 SELECT
-    category,
-    priority_area,
+    report_month,
     report_year,
     report_quarter,
-    report_month,
-    ROUND(market_value::NUMERIC, 3) as market_value,
-    ROUND(company_value::NUMERIC, 3) as company_value,
-    ROUND(company_share_pct::NUMERIC, 2) as company_share_pct,
-    
-    -- Growth metrics (comparing same month of previous year)
-    CASE 
-        WHEN report_year = (SELECT MAX(report_year) FROM calculations) THEN ROUND((company_share_pct - LAG(company_share_pct) OVER (PARTITION BY category, priority_area, EXTRACT(MONTH FROM report_month) ORDER BY report_year))::NUMERIC, 2)
-        -- Support for all years
-        WHEN LAG(company_share_pct) OVER (PARTITION BY category, priority_area, EXTRACT(MONTH FROM report_month) ORDER BY report_year) IS NOT NULL THEN ROUND((company_share_pct - LAG(company_share_pct) OVER (PARTITION BY category, priority_area, EXTRACT(MONTH FROM report_month) ORDER BY report_year))::NUMERIC, 2)
-        ELSE NULL 
-    END as share_change_pp,
+    priority_area,
+    insurance_type,
+    product_category,
+    product_name,
+    ROUND(company_premium_cy::NUMERIC, 2) AS company_premium_cy,
+    ROUND(company_premium_py::NUMERIC, 2) AS company_premium_py,
     
     CASE 
-        WHEN prev_year_val > 0 THEN ROUND(((company_value - prev_year_val) / prev_year_val * 100)::NUMERIC, 2)
+        WHEN company_premium_py > 0 
+        THEN ROUND(((company_premium_cy - company_premium_py) / company_premium_py * 100)::NUMERIC, 2)
         ELSE NULL 
-    END as growth_pct
+    END AS premium_growth_pct,
+    
+    ROUND(company_net_profit_cy::NUMERIC, 2) AS company_net_profit_cy,
+    ROUND(company_net_profit_py::NUMERIC, 2) AS company_net_profit_py,
+    
+    CASE 
+        WHEN company_net_profit_py <> 0 
+        THEN ROUND(((company_net_profit_cy - company_net_profit_py) / ABS(company_net_profit_py) * 100)::NUMERIC, 2)
+        ELSE NULL 
+    END AS net_profit_growth_pct,
+    
+    profitability_pct
 
 FROM calculations
-ORDER BY category, priority_area, report_month DESC
+ORDER BY report_month DESC, priority_area, product_name

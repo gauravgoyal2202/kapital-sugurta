@@ -424,6 +424,7 @@ detailed_data AS (
 prepared_base AS (
     SELECT
         DATE_TRUNC('month', d.pay_date) AS month,
+        d.pturi_id,
 
         CASE
             WHEN UPPER(d.channel) LIKE '%BANKS%'
@@ -473,6 +474,7 @@ prepared AS (
 main_grouped AS (
     SELECT
         month,
+        pturi_id,
         filtr,
         channels,
         SUM(oplsum) AS oplsum,
@@ -482,6 +484,7 @@ main_grouped AS (
     FROM prepared
     GROUP BY
         month,
+        pturi_id,
         filtr,
         channels
 ),
@@ -489,6 +492,7 @@ main_grouped AS (
 ras_grouped AS (
     SELECT
         p.month,
+        p.pturi_id,
         p.filtr,
         p.channels,
         SUM(COALESCE(r.tb_summa, 0)) AS ras_value
@@ -503,12 +507,14 @@ ras_grouped AS (
 
     GROUP BY
         p.month,
+        p.pturi_id,
         p.filtr,
         p.channels
 )
 
 SELECT
     m.month,
+    m.pturi_id,
     m.filtr,
     m.channels,
     m.oplsum,
@@ -520,10 +526,12 @@ FROM main_grouped m
 
 LEFT JOIN ras_grouped r
     ON r.month = m.month
+   AND r.pturi_id = m.pturi_id
    AND r.filtr = m.filtr
    AND r.channels = m.channels
 
 ORDER BY
     m.month,
+    m.pturi_id,
     m.filtr,
     m.channels

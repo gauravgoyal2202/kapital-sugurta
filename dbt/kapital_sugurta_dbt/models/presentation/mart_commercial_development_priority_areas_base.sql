@@ -16,6 +16,7 @@ aggregated_base AS (
     SELECT
         c.month::DATE                           AS report_month,
         EXTRACT(YEAR FROM c.month)::INT         AS report_year,
+        c.pturi_id,
 
         CASE 
             WHEN c.channels LIKE 'Banks%' THEN 'Banking'
@@ -68,6 +69,9 @@ SELECT
     ab.report_month,
     ab.report_year,
     ab.priority_area,
+    COALESCE(pd.insurance_type, 'Voluntary') AS insurance_type,
+    COALESCE(pd.category, 'Other') AS product_category,
+    COALESCE(pd.product_name, 'Other') AS product_name,
     ab.channels,
     ROUND(ab.oplsum::NUMERIC,      3) AS co_premium,
     ROUND(ab.claim_value::NUMERIC, 3) AS co_claims,
@@ -100,4 +104,5 @@ SELECT
 
 FROM aggregated_base ab
 LEFT JOIN mkt_agg m ON m.priority_area = ab.priority_area
+LEFT JOIN {{ ref('curated_product_dimension') }} pd ON pd.pturi_id = ab.pturi_id
 ORDER BY ab.report_month DESC, ab.priority_area
