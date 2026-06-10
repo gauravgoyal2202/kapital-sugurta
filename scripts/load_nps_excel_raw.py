@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 LOG_DIR = os.path.join(BASE_DIR, 'logs')
 os.makedirs(LOG_DIR, exist_ok=True)
-LOG_FILE = os.path.join(LOG_DIR, 'load_solvency_adequacy.log')
+LOG_FILE = os.path.join(LOG_DIR, 'load_nps.log')
 
 # Configure logging
 logging.basicConfig(
@@ -24,7 +24,7 @@ console.setFormatter(formatter)
 logging.getLogger('').addHandler(console)
 
 def main():
-    logging.info('--- Started loading Solvency Adequacy data ---')
+    logging.info('--- Started loading NPS data ---')
     
     # Load .env variables
     env_path = os.path.join(BASE_DIR, '.env')
@@ -46,16 +46,16 @@ def main():
     engine = create_engine(engine_url)
     
     # Define source file path from Google Drive
-    gdrive_link = os.getenv('GDRIVE_SOLVENCY_ADEQUACY_LINK')
+    gdrive_link = os.getenv('GDRIVE_NPS_LINK')
     if not gdrive_link:
-        logging.error("GDRIVE_SOLVENCY_ADEQUACY_LINK not found in .env")
+        logging.error("GDRIVE_NPS_LINK not found in .env")
         sys.exit(1)
 
     import gdown
     import glob
     import shutil
     
-    gdrive_download_dir = os.path.join(BASE_DIR, 'excel_drop', 'gdrive_solvency')
+    gdrive_download_dir = os.path.join(BASE_DIR, 'excel_drop', 'gdrive_nps')
     # Clear directory to ensure we only process the latest download
     if os.path.exists(gdrive_download_dir):
         shutil.rmtree(gdrive_download_dir)
@@ -75,33 +75,71 @@ def main():
     excel_files = glob.glob(search_pattern, recursive=True)
     
     if not excel_files:
-        logging.error(f"No Excel file found for Solvency Adequacy in downloaded Drive folder.")
+        logging.error(f"No Excel file found for NPS in downloaded Drive folder.")
         sys.exit(1)
         
     excel_path = excel_files[0]
     logging.info(f"Found Excel file: {excel_path}")
         
     try:
-        # Read Excel: row 1 is header (header=0 in pandas), row 2 is data
-        logging.info(f"Reading data from {excel_path}...")
-        df = pd.read_excel(excel_path, header=0)
+        # Read Sheets
+        sheets = {
+            'Form Responses 1': 'General NPS',
+            'Form Responses 2': 'General NPS',
+            'Form Responses 3': 'Employee NPS'
+        }
         
-        # Log basic stats
-        logging.info(f"Loaded {len(df)} rows and {len(df.columns)} columns from Excel.")
-        logging.info(f"Columns found: {', '.join(df.columns.tolist())}")
+        dfs = []
+        for sheet, survey_type in sheets.items():
+            try:
+                df = pd.read_excel(excel_path, sheet_name=sheet)
+                if len(df) > 0:
+                    # Map columns by position since headers are long Cyrillic strings
+                    # Col 0: Timestamp, Col 1: Score, Col 2: Comment
+                    df = df.iloc[:, [0, 1, 2]]
+                    df.columns = ['response_timestamp', 'nps_score_raw', 'comment_text']
+                    df['survey_type'] = survey_type
+                    df['source_sheet'] = sheet
+                    dfs.append(df)
+            except Exception as e:
+                logging.warning(f"Could not read sheet {sheet}: {e}")
+
+        if not dfs:
+            logging.info("No data found in any sheet.")
+            if os.path.exists(gdrive_download_dir):
+                shutil.rmtree(gdrive_download_dir)
+            return
+
+        combined = pd.concat(dfs, ignore_index=True)
+        
+        # Clean data type representation
+        combined['response_timestamp'] = pd.to_datetime(combined['response_timestamp'], errors='coerce')
+        combined['nps_score_raw'] = pd.to_numeric(combined['nps_score_raw'], errors='coerce')
+        combined['comment_text'] = combined['comment_text'].astype(str)
         
         # Add metadata
-        df['loaded_at'] = pd.Timestamp.now()
+        combined['etl_loaded_at'] = pd.Timestamp.now()
         
         # Load into Postgres (raw schema)
         schema_name = 'raw'
-        table_name = 'solvency_adequacy'
-
+        table_name = 'nps_survey_responses'
+        
         from sqlalchemy import text
 
         # Ensure schema and table exist (outside main transaction — DDL is idempotent)
-        with engine.begin() as setup_conn:
-            setup_conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {schema_name};"))
+        with engine.begin() as conn:
+            conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {schema_name};"))
+            conn.execute(text(f"""
+                CREATE TABLE IF NOT EXISTS {schema_name}.{table_name} (
+                    id               SERIAL PRIMARY KEY,
+                    response_timestamp TIMESTAMP,
+                    nps_score_raw    NUMERIC(4,1),
+                    comment_text     TEXT,
+                    survey_type      VARCHAR(50),
+                    source_sheet     VARCHAR(50),
+                    etl_loaded_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+            """))
 
         # Single transaction: TRUNCATE + INSERT — rolls back fully on any error
         logging.info(f"Writing data to PostgreSQL table {schema_name}.{table_name} (transactional)...")
@@ -114,14 +152,14 @@ def main():
                 logging.info(f"Table {schema_name}.{table_name} truncated (PK sequence reset).")
 
                 # Insert all rows via the same connection (same transaction)
-                df.to_sql(
+                combined.to_sql(
                     table_name,
                     con=conn,
                     schema=schema_name,
                     if_exists='append',
                     index=False
                 )
-                logging.info(f"Inserted {len(df)} rows — committing transaction.")
+                logging.info(f"Inserted {len(combined)} rows — committing transaction.")
             # conn.begin().__exit__ commits here; any exception triggers rollback
 
         logging.info("Data dumped to database successfully.")
@@ -130,9 +168,8 @@ def main():
             shutil.rmtree(gdrive_download_dir)
             logging.info(f"Cleaned up temporary download directory: {gdrive_download_dir}")
         
-        
     except Exception as e:
-        logging.error(f"Failed to load Solvency Adequacy data: {e}", exc_info=True)
+        logging.error(f"Failed to load NPS data: {e}", exc_info=True)
         sys.exit(1)
         
     logging.info('--- Loading completed ---')
