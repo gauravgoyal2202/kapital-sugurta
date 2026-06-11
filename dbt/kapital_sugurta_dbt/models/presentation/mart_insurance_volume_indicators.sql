@@ -165,17 +165,16 @@ company_with_claims AS (
 -- ================================================================
 final_pairs AS (
     SELECT
-        cy.report_month,
-        cy.report_year,
-        (cy.report_year - 1)                         AS prior_year,
-        -- Prior-year same calendar month (e.g. 2025-03 -> 2024-03)
-        (cy.report_month - INTERVAL '1 year')::DATE  AS prior_year_month,
-        cy.insurance_type,
-        cy.category,
-        cy.product_name,
-        cy.sales_channel,
-        cy.partner_type,
-        cy.partner_name,
+        COALESCE(cy.report_month, (py.report_month + INTERVAL '1 year')::DATE) AS report_month,
+        COALESCE(cy.report_year, py.report_year + 1) AS report_year,
+        COALESCE(cy.report_year - 1, py.report_year) AS prior_year,
+        COALESCE((cy.report_month - INTERVAL '1 year')::DATE, py.report_month) AS prior_year_month,
+        COALESCE(cy.insurance_type, py.insurance_type) AS insurance_type,
+        COALESCE(cy.category, py.category) AS category,
+        COALESCE(cy.product_name, py.product_name) AS product_name,
+        COALESCE(cy.sales_channel, py.sales_channel) AS sales_channel,
+        COALESCE(cy.partner_type, py.partner_type) AS partner_type,
+        COALESCE(cy.partner_name, py.partner_name) AS partner_name,
 
         -- Current Month Metrics
         cy.co_prem   AS co_prem_cy,
@@ -189,7 +188,7 @@ final_pairs AS (
         py.co_claims AS co_claims_py,
         py.co_term   AS co_term_py
     FROM company_with_claims cy
-    LEFT JOIN company_with_claims py
+    FULL OUTER JOIN company_with_claims py
         ON  py.report_month    = (cy.report_month - INTERVAL '1 year')::DATE
         AND py.insurance_type  = cy.insurance_type
         AND py.category        = cy.category
