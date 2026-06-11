@@ -37,12 +37,12 @@ from email.mime.multipart import MIMEMultipart
 
 # --- SMTP CONFIGURATION (Pulled from .env) ---
 SMTP_CONFIG = {
-    "server": os.getenv("SMTP_SERVER"),
-    "port": int(os.getenv("SMTP_PORT", 587)),
-    "user": os.getenv("SMTP_USER"),
-    "pass": os.getenv("SMTP_PASS")
+    "server": os.getenv("SMTP_SERVER") or os.getenv("ALERT_SMTP_HOST"),
+    "port": int(os.getenv("SMTP_PORT") or os.getenv("ALERT_SMTP_PORT") or 587),
+    "user": os.getenv("SMTP_USER") or os.getenv("ALERT_SMTP_USER"),
+    "pass": os.getenv("SMTP_PASS") or os.getenv("ALERT_SMTP_PASS")
 }
-SMTP_TO = os.getenv("SMTP_TO", "responsible_person@kapital.uz")
+SMTP_TO = os.getenv("SMTP_TO") or os.getenv("ALERT_TO") or "responsible_person@kapital.uz"
 
 def get_pg_conn():
     return psycopg2.connect(
