@@ -29,7 +29,8 @@ WITH base AS (
         kom_sum      AS commission_uzs,
         claim_value  AS claims_uzs,
         fifty        AS motivation_uzs,
-        ras_value    AS reinsurance_uzs
+        ras_value    AS reinsurance_uzs,
+        bank_name
     FROM {{ ref('curated_partner_indicators_detail') }}
 
 ),
@@ -104,8 +105,16 @@ SELECT
     p.partner_id,
     p.partner_surname,
     p.partner_name,
-    p.partner_full_name,
-    p.partner_category,
+    CASE
+        WHEN b.channels LIKE 'Banks%' THEN COALESCE(b.bank_name, p.partner_full_name)
+        ELSE p.partner_full_name
+    END                                                             AS partner_full_name,
+    CASE
+        WHEN b.channels LIKE 'Banks%' THEN 'Banks'
+        WHEN b.channels LIKE 'Marketplace%' THEN 'Marketplaces'
+        WHEN b.channels LIKE '% - API' AND b.channels NOT LIKE 'Website%' THEN 'API Partners'
+        ELSE 'Other'
+    END                                                             AS partner_category,
     CASE WHEN b.user_id IN (19202, 19588, 20322, 40791) THEN 'Yes' ELSE 'No' END AS is_anor_bank,
 
     -- ── Product dimensions ───────────────────────────────────────────────
@@ -141,7 +150,7 @@ SELECT
     CASE
         WHEN b.premium_uzs > 0
         THEN ROUND(
-                ((b.premium_uzs - b.commission_uzs - b.claims_uzs - b.motivation_uzs)
+                ((b.premium_uzs - b.commission_uzs - b.claims_uzs - b.motivation_uzs - b.reinsurance_uzs)
                   / b.premium_uzs * 100)::NUMERIC, 2)
         ELSE 0
     END                                                             AS profitability_pct,
@@ -159,6 +168,37 @@ SELECT
         THEN ROUND((b.premium_uzs / mt.total_premium_uzs * 100)::NUMERIC, 4)
         ELSE 0
     END                                                             AS premium_share_pct,
+
+    -- partner_type
+    CASE
+        -- is_partner, is_own, is_agent are all true
+        WHEN (b.channels IN ('Banks - Agent - API', 'Banks - Agent - Not API', 'In-House - Agent - Not API', 'Marketplace - Agent - API'))
+         AND (b.channels IN ('In-House - Agent - Not API', 'In-House - Internal - API', 'In-House - Internal - Not API', 'Website - Internal - API'))
+         AND (b.channels IN ('Banks - Agent - API', 'Banks - Agent - Not API', 'Banks - Internal - API', 'Banks - Internal - Not API', 'Marketplace - Agent - API', 'Marketplace - Internal - API'))
+            THEN 'partner-own-agent'
+        -- is_own & is_agent are true
+        WHEN (b.channels IN ('In-House - Agent - Not API', 'In-House - Internal - API', 'In-House - Internal - Not API', 'Website - Internal - API'))
+         AND (b.channels IN ('Banks - Agent - API', 'Banks - Agent - Not API', 'In-House - Agent - Not API', 'Marketplace - Agent - API'))
+            THEN 'own-agent'
+        -- is_partner & is_own are true
+        WHEN (b.channels IN ('Banks - Agent - API', 'Banks - Agent - Not API', 'Banks - Internal - API', 'Banks - Internal - Not API', 'Marketplace - Agent - API', 'Marketplace - Internal - API'))
+         AND (b.channels IN ('In-House - Agent - Not API', 'In-House - Internal - API', 'In-House - Internal - Not API', 'Website - Internal - API'))
+            THEN 'partner-own'
+        -- is_partner & is_agent are true
+        WHEN (b.channels IN ('Banks - Agent - API', 'Banks - Agent - Not API', 'Banks - Internal - API', 'Banks - Internal - Not API', 'Marketplace - Agent - API', 'Marketplace - Internal - API'))
+         AND (b.channels IN ('Banks - Agent - API', 'Banks - Agent - Not API', 'In-House - Agent - Not API', 'Marketplace - Agent - API'))
+            THEN 'partner-agent'
+        -- only is_partner
+        WHEN (b.channels IN ('Banks - Agent - API', 'Banks - Agent - Not API', 'Banks - Internal - API', 'Banks - Internal - Not API', 'Marketplace - Agent - API', 'Marketplace - Internal - API'))
+            THEN 'partner'
+        -- only is_own
+        WHEN (b.channels IN ('In-House - Agent - Not API', 'In-House - Internal - API', 'In-House - Internal - Not API', 'Website - Internal - API'))
+            THEN 'own'
+        -- only is_agent
+        WHEN (b.channels IN ('Banks - Agent - API', 'Banks - Agent - Not API', 'In-House - Agent - Not API', 'Marketplace - Agent - API'))
+            THEN 'agent'
+        ELSE 'none'
+    END                                                             AS partner_type,
 
     'Actual'                                                        AS scenario
 
