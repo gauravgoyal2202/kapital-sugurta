@@ -5,11 +5,11 @@ from psycopg2.extras import execute_values
 from dotenv import load_dotenv
 from datetime import datetime
 
-BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 load_dotenv(os.path.join(BASE_DIR, '.env'))
 
 LOG      = os.path.join(BASE_DIR, 'logs', 'watch_excel.log')
-DROP_DIR = os.path.join(BASE_DIR, 'excel_drop')
+DROP_DIR = os.path.join(BASE_DIR, 'data', 'raw')
 ARCHIVE  = os.path.join(BASE_DIR, 'archive')
 ARCHIVE_CLAIMS = os.path.join(ARCHIVE, 'archive_claims')
 DROP_CLAIMS_DIR = os.path.join(DROP_DIR, 'Claims_portfolio')

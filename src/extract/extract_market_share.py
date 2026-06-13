@@ -12,6 +12,7 @@ Expects a .env file in the project root with:
 """
 
 import os
+import sys
 import math
 import logging
 import psycopg2
@@ -22,7 +23,7 @@ from dotenv import load_dotenv
 # ---------------------------------------------------------------------------
 # Paths & logging
 # ---------------------------------------------------------------------------
-BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 LOG_DIR = os.path.join(BASE_DIR, "logs")
 os.makedirs(LOG_DIR, exist_ok=True)
 LOG_FILE = os.path.join(LOG_DIR, "raw_load_market_share.log")
@@ -36,6 +37,12 @@ logging.basicConfig(
     ],
 )
 log = logging.getLogger(__name__)
+
+# ── Metadata DB audit ─────────────────────────────────────────────────────────
+sys.path.insert(0, BASE_DIR)
+from src.utils.etl_utils import init_metadata_table, start_metadata_log, end_metadata_log
+
+TARGET_TABLE = 'market_share_insurance_class_stats'
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -311,6 +318,24 @@ def main():
     log.info("ETL START: raw_load_market_share")
     log.info("=" * 60)
 
+    # Initialise audit table (idempotent — safe to call every run)
+    try:
+        init_metadata_table()
+    except Exception as e:
+        log.warning(f"Could not init metadata table: {e}")
+
+    # Start audit log — status = RUNNING
+    run_id = None
+    try:
+        run_id, _ = start_metadata_log(
+            target_table=TARGET_TABLE,
+            refresh_type='INCREMENTAL',
+            source_table='gdrive_market_share_excel',
+            load_strategy='UPSERT'
+        )
+    except Exception as e:
+        log.warning(f"Could not start metadata log: {e}")
+
     # DB setup (loads .env)
     conn = get_db_connection()
     create_table(conn)
@@ -324,7 +349,7 @@ def main():
     import glob
     import shutil
     
-    gdrive_download_dir = os.path.join(BASE_DIR, 'excel_drop', 'gdrive_market_share')
+    gdrive_download_dir = os.path.join(BASE_DIR, 'data', 'raw', 'gdrive_market_share')
     # Clear directory to ensure we only process the latest download
     if os.path.exists(gdrive_download_dir):
         shutil.rmtree(gdrive_download_dir)
@@ -384,6 +409,19 @@ def main():
     log.info(summary)
     print(summary)
 
+    # ── Audit: SUCCESS ────────────────────────────────────────────────────
+    if run_id:
+        end_metadata_log(
+            run_id, 'SUCCESS',
+            rows_extracted=len(rows),
+            rows_inserted=inserted,
+            rows_rejected=len(failed)
+        )
+
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        log.error(f"Pipeline failed: {e}", exc_info=True)
+        sys.exit(1)

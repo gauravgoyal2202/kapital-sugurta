@@ -10,7 +10,7 @@ import time
 import traceback
 
 # Load environment variables
-BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 load_dotenv(os.path.join(BASE_DIR, '.env'))
 
 # Configure Logging
@@ -306,6 +306,17 @@ def migrate_table(ora_conn, pg_conn, table_name):
         result['decision'] = decision
         logging.info(f"{table_name:25} | Decision: {decision}")
 
+        # Import metadata log utilities here to avoid circular imports
+        from src.utils.etl_utils import start_metadata_log, end_metadata_log
+        
+        run_id = None
+        try:
+            refresh_type = 'INCREMENTAL' if (inc_col and last_watermark) else 'FULL'
+            load_strategy = 'UPSERT' if pk_cols else 'TRUNCATE_AND_RELOAD'
+            run_id, _ = start_metadata_log(pg_table, refresh_type, load_strategy, source_table=table_name)
+        except Exception as e:
+            logging.warning(f"Failed to start metadata log: {e}")
+
         # 4. Prepare UPSERT logic
         now = datetime.now()
         insert_cols = ', '.join(col_names) + ', etl_uploaded_date, etl_updated_date'
@@ -351,7 +362,6 @@ def migrate_table(ora_conn, pg_conn, table_name):
             
             if inserted % (BATCH_SIZE * 20) == 0:
                 logging.info(f"  ... {inserted} rows processed so far")
-            #logging.info(f"  [{table_name}] ... processed {inserted} rows")
 
         # 6. Finalize
         if inserted > 0 and inc_col and new_max_watermark:
@@ -363,6 +373,11 @@ def migrate_table(ora_conn, pg_conn, table_name):
         result['rows'] = inserted
         result['duration'] = round(time.time() - start_time, 2)
         logging.info(f"  [{table_name}] COMPLETED: {inserted} rows in {result['duration']}s")
+        
+        try:
+            if run_id: end_metadata_log(run_id, 'SUCCESS', rows_extracted=inserted, rows_inserted=inserted)
+        except Exception as e: logging.warning(f"Failed to write end metadata log: {e}")
+        
         return result
 
     except Exception as e:
@@ -371,6 +386,11 @@ def migrate_table(ora_conn, pg_conn, table_name):
         result['status'] = 'FAILED'
         result['error'] = str(e)
         result['duration'] = round(time.time() - start_time, 2)
+        
+        try:
+            if 'run_id' in locals() and run_id: end_metadata_log(run_id, 'FAILED', error_message=str(e)[:1000])
+        except Exception as log_e: logging.warning(f"Failed to write end metadata log: {log_e}")
+        
         return result
     finally:
         ora_cursor.close()
@@ -378,6 +398,12 @@ def migrate_table(ora_conn, pg_conn, table_name):
 
 if __name__ == '__main__':
     ora, pg = None, None
+    try:
+        from src.utils.etl_utils import init_metadata_table
+        init_metadata_table()
+    except Exception as e:
+        logging.warning(f"Could not init metadata table: {e}")
+
     try:
         ora = oracledb.connect(**ORACLE_CONFIG)
         pg = psycopg2.connect(PG_CONFIG)
