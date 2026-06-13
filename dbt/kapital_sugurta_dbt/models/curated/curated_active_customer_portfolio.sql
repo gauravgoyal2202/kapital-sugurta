@@ -18,7 +18,7 @@
 WITH month_spine AS (
     -- Generates a spine for all months in the analysis window
     SELECT DATE_TRUNC('month', d)::DATE as report_month
-    FROM generate_series('2020-01-01'::DATE, '2026-12-31'::DATE, '1 month'::interval) d
+    FROM generate_series('2021-01-01'::DATE, '2030-12-31'::DATE, '1 month'::interval) d
 ),
 
 raw_active_policies AS (
@@ -41,7 +41,7 @@ raw_active_policies AS (
       AND po.tb_date_end IS NOT NULL
       AND po.tb_date_begin IS NOT NULL
       -- Filter to prevent anomalies
-      AND po.tb_date_begin BETWEEN '2010-01-01' AND '2030-01-01' 
+      AND po.tb_date_begin >= '2021-01-01' 
 )
 
 SELECT 

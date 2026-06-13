@@ -14,7 +14,6 @@ historical_excel_data AS (
         'Actual' AS scenario,
         CURRENT_TIMESTAMP AS updated_at
     FROM source_data
-    WHERE {{ clean_date('payout_date') }} < '2026-01-01'
 ),
 
 oracle_2026_data AS (

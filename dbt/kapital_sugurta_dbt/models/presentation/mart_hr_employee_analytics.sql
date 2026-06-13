@@ -16,8 +16,8 @@ WITH months AS (
             - INTERVAL '1 day'
         )::DATE AS month_end
     FROM generate_series(
-        '2025-01-01'::DATE,
-        '2026-12-01'::DATE,
+        '2021-01-01'::DATE,
+        '2030-12-01'::DATE,
         '1 month'::INTERVAL
     ) d
 ),
@@ -42,8 +42,7 @@ monthly_actions AS (
     FROM {{ source('raw', 'ins_employee_oracle') }} e
     LEFT JOIN {{ source('raw', 'ins_department_oracle') }} dept ON e.department_id = dept.ins_id
     LEFT JOIN {{ source('raw', 'sp_division_oracle') }} div ON e.division_id = div.sp_id
-    WHERE e.post_date >= DATE '2025-01-01'
-      AND e.post_date < DATE '2027-01-01'
+    WHERE e.post_date >= DATE '2021-01-01'
     GROUP BY 1, 2, 3
 ),
 
