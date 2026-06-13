@@ -22,6 +22,6 @@ FROM {{ source('raw', 'ins_loss_oracle') }} vipl
 LEFT JOIN {{ source('raw', 'ins_sobitie_oracle') }} s ON vipl.sobitie_id = s.ins_id
 LEFT JOIN {{ source('raw', 'sp_division_oracle') }} div ON vipl.division_id = div.sp_id
 LEFT JOIN {{ ref('curated_product_dimension') }} prod ON vipl.pturi_id = prod.pturi_id
-WHERE s.decision_date >= '2026-01-01'
+WHERE s.decision_date >= '2021-01-01'
   AND vipl.decision_summa > 0
   AND COALESCE(s.active, 0) < 2

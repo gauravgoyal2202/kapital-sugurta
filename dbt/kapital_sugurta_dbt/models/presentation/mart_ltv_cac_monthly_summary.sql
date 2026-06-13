@@ -85,10 +85,14 @@ new_policies_monthly AS (
     GROUP BY 1
 ),
 
--- Step 8: Active customers & churn rate (weighted company-level)
+-- Step 8: Active customers & churn rate (at segment level)
 customer_metrics AS (
     SELECT
         report_month,
+        legal_form,
+        customer_segment,
+        oked_industry_code,
+        region_code,
         SUM(active_customers) AS active_customers,
         SUM(retained_customers) AS retained_customers,
         SUM(customers_at_start_of_period) AS customers_at_start,
@@ -101,81 +105,112 @@ customer_metrics AS (
                 / NULLIF(SUM(customers_at_start_of_period), 0)
         , 0.0001) AS churn_rate
     FROM {{ ref('mart_customer_base_summary') }}
+    GROUP BY 1, 2, 3, 4, 5
+),
+
+-- Step 9: Company-level churn rate and totals for normalization
+company_totals AS (
+    SELECT
+        report_month,
+        SUM(active_customers) AS total_active_customers,
+        GREATEST(
+            1.0 - SUM(retained_customers)::NUMERIC
+                / NULLIF(SUM(customers_at_start_of_period), 0)
+        , 0.0001) AS company_churn_rate
+    FROM {{ ref('mart_customer_base_summary') }}
     GROUP BY 1
+),
+
+-- Step 10: Compute shares to distribute company-level financials proportionally
+customer_share AS (
+    SELECT
+        cm.*,
+        ct.company_churn_rate,
+        COALESCE(cm.active_customers::NUMERIC / NULLIF(ct.total_active_customers, 0), 0) AS active_share
+    FROM customer_metrics cm
+    JOIN company_totals ct ON ct.report_month = cm.report_month
 )
 
--- Final output: one row per month, company level
+-- Final output: one row per month per segment combination
 SELECT
-    cm.report_month,
-    DATE_TRUNC('quarter', cm.report_month)::DATE             AS report_quarter,
-    EXTRACT(YEAR FROM cm.report_month)::INT                   AS report_year,
-    EXTRACT(MONTH FROM cm.report_month)::INT                  AS report_month_num,
-    EXTRACT(QUARTER FROM cm.report_month)::INT                AS report_quarter_num,
-    TO_CHAR(cm.report_month, 'Mon YYYY')                      AS report_month_label,
+    cs.report_month,
+    DATE_TRUNC('quarter', cs.report_month)::DATE             AS report_quarter,
+    EXTRACT(YEAR FROM cs.report_month)::INT                   AS report_year,
+    EXTRACT(MONTH FROM cs.report_month)::INT                  AS report_month_num,
+    EXTRACT(QUARTER FROM cs.report_month)::INT                AS report_quarter_num,
+    TO_CHAR(cs.report_month, 'Mon YYYY')                      AS report_month_label,
+
+    -- Added filter dimensions
+    cs.legal_form,
+    cs.customer_segment,
+    cs.oked_industry_code,
+    cs.region_code,
 
     -- Customer metrics
-    cm.active_customers,
-    cm.retained_customers,
-    cm.customers_at_start,
-    ROUND(cm.retention_rate_pct::NUMERIC, 2)                  AS retention_rate_pct,
-    ROUND(cm.churn_rate::NUMERIC, 4)                          AS churn_rate,
+    cs.active_customers,
+    cs.retained_customers,
+    cs.customers_at_start,
+    ROUND(cs.retention_rate_pct::NUMERIC, 2)                  AS retention_rate_pct,
+    
+    -- Churn rate set to company level for Power BI's AVERAGE() aggregation
+    ROUND(cs.company_churn_rate::NUMERIC, 4)                  AS churn_rate,
 
-    -- LTV components
-    ROUND(COALESCE(pd.monthly_premium, 0)::NUMERIC, 2)       AS premium_delta_uzs,
-    ROUND(COALESCE(cl.claims_uzs, 0)::NUMERIC, 2)            AS claims_uzs,
-    ROUND(COALESCE(co.commissions_uzs, 0)::NUMERIC, 2)       AS commissions_uzs,
-    ROUND(COALESCE(ri.reinsurance_uzs, 0)::NUMERIC, 2)       AS reinsurance_out_uzs,
-    ROUND(COALESCE(te.terminated_uzs, 0)::NUMERIC, 2)        AS terminated_contracts_uzs,
+    -- LTV components (allocated proportionally by customer share)
+    ROUND((COALESCE(pd.monthly_premium, 0) * cs.active_share)::NUMERIC, 2)       AS premium_delta_uzs,
+    ROUND((COALESCE(cl.claims_uzs, 0) * cs.active_share)::NUMERIC, 2)            AS claims_uzs,
+    ROUND((COALESCE(co.commissions_uzs, 0) * cs.active_share)::NUMERIC, 2)       AS commissions_uzs,
+    ROUND((COALESCE(ri.reinsurance_uzs, 0) * cs.active_share)::NUMERIC, 2)       AS reinsurance_out_uzs,
+    ROUND((COALESCE(te.terminated_uzs, 0) * cs.active_share)::NUMERIC, 2)        AS terminated_contracts_uzs,
 
-    -- Net margin
+    -- Net margin (allocated)
     ROUND((
-        COALESCE(pd.monthly_premium, 0)
-        - COALESCE(cl.claims_uzs, 0)
-        - COALESCE(co.commissions_uzs, 0)
-        - COALESCE(ri.reinsurance_uzs, 0)
-        - COALESCE(te.terminated_uzs, 0)
+        (COALESCE(pd.monthly_premium, 0)
+         - COALESCE(cl.claims_uzs, 0)
+         - COALESCE(co.commissions_uzs, 0)
+         - COALESCE(ri.reinsurance_uzs, 0)
+         - COALESCE(te.terminated_uzs, 0)) * cs.active_share
     )::NUMERIC, 2) AS net_margin_uzs,
 
-    -- LTV = net_margin / active_customers / churn_rate
-    CASE WHEN cm.active_customers > 0 AND cm.churn_rate > 0
+    -- LTV calculated using allocated metrics
+    CASE WHEN cs.active_customers > 0 AND cs.company_churn_rate > 0
         THEN ROUND((
-            (COALESCE(pd.monthly_premium, 0)
-             - COALESCE(cl.claims_uzs, 0)
-             - COALESCE(co.commissions_uzs, 0)
-             - COALESCE(ri.reinsurance_uzs, 0)
-             - COALESCE(te.terminated_uzs, 0))
-            / cm.active_customers
-            / cm.churn_rate
+            ((COALESCE(pd.monthly_premium, 0)
+              - COALESCE(cl.claims_uzs, 0)
+              - COALESCE(co.commissions_uzs, 0)
+              - COALESCE(ri.reinsurance_uzs, 0)
+              - COALESCE(te.terminated_uzs, 0)) * cs.active_share)
+            / cs.active_customers
+            / cs.company_churn_rate
         )::NUMERIC, 2)
         ELSE 0
     END AS customer_ltv_uzs,
 
-    -- CAC components
-    COALESCE(np.new_policies_count, 0)                        AS new_policies_count,
-    ROUND(COALESCE(cd.monthly_expense_delta, 0)::NUMERIC, 2) AS commission_expense_delta_uzs,
+    -- CAC components (allocated proportionally by customer share)
+    (COALESCE(np.new_policies_count, 0) * cs.active_share)::NUMERIC AS new_policies_count,
+    ROUND((COALESCE(cd.monthly_expense_delta, 0) * cs.active_share)::NUMERIC, 2) AS commission_expense_delta_uzs,
 
-    -- CAC = expense_delta / new_policies
-    CASE WHEN COALESCE(np.new_policies_count, 0) > 0
+    -- CAC = expense_delta / new_policies (using allocated values)
+    CASE WHEN (COALESCE(np.new_policies_count, 0) * cs.active_share) > 0
         THEN ROUND((
-            COALESCE(cd.monthly_expense_delta, 0)
-            / np.new_policies_count
+            (COALESCE(cd.monthly_expense_delta, 0) * cs.active_share)
+            / (COALESCE(np.new_policies_count, 0) * cs.active_share)
         )::NUMERIC, 2)
         ELSE 0
     END AS customer_acquisition_cost_uzs,
 
     'Actual' AS scenario
 
-FROM customer_metrics cm
+FROM customer_share cs
 LEFT JOIN premium_delta pd
-    ON pd.report_month = cm.report_month
+    ON pd.report_month = cs.report_month
     AND pd.monthly_premium IS NOT NULL
 LEFT JOIN commission_delta cd
-    ON DATE_TRUNC('month', cd.report_date)::DATE = cm.report_month
+    ON DATE_TRUNC('month', cd.report_date)::DATE = cs.report_month
     AND cd.monthly_expense_delta IS NOT NULL
-LEFT JOIN claims_monthly cl ON cl.report_month = cm.report_month
-LEFT JOIN commissions_monthly co ON co.report_month = cm.report_month
-LEFT JOIN reinsurance_monthly ri ON ri.report_month = cm.report_month
-LEFT JOIN terminated_monthly te ON te.report_month = cm.report_month
-LEFT JOIN new_policies_monthly np ON np.report_month = cm.report_month
+LEFT JOIN claims_monthly cl ON cl.report_month = cs.report_month
+LEFT JOIN commissions_monthly co ON co.report_month = cs.report_month
+LEFT JOIN reinsurance_monthly ri ON ri.report_month = cs.report_month
+LEFT JOIN terminated_monthly te ON te.report_month = cs.report_month
+LEFT JOIN new_policies_monthly np ON np.report_month = cs.report_month
 
-ORDER BY cm.report_month
+ORDER BY cs.report_month, cs.legal_form, cs.customer_segment, cs.oked_industry_code, cs.region_code
