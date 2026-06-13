@@ -80,7 +80,7 @@ SELECT
         WHEN premium_uzs > 0
         THEN ROUND(
                 (
-                    (premium_uzs - commission_uzs - claims_uzs - motivation_uzs)
+                    (premium_uzs - commission_uzs - claims_uzs - motivation_uzs - reinsurance_uzs)
                     / premium_uzs * 100
                 )::NUMERIC,
              2)

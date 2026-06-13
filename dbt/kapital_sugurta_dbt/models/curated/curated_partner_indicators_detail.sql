@@ -152,7 +152,14 @@ main_data AS (
         COALESCE(fpack.fifty_total, 0) AS fifty,
 
         o.anketa_id,
-        po.tb_id AS polis_id
+        po.tb_id AS polis_id,
+
+        -- Bank Name mapping from client query
+        CASE
+            WHEN bank_k.tb_id IS NOT NULL THEN 'Banks - ' || bank_k.tb_orgname
+            WHEN o.user_id IN (19588, 40791, 44788, 20879, 50788) THEN 'Banks - ' || TRIM(u.tb_surname) || ' ' || TRIM(u.tb_name)
+            ELSE NULL
+        END AS bank_name
 
     FROM {{ source('raw', 'ins_oplata_oracle') }} o
 
@@ -272,7 +279,8 @@ main_data AS (
         0                                       AS fifty,
 
         t.tb_id                                 AS anketa_id,
-        NULL::numeric                           AS polis_id
+        NULL::numeric                           AS polis_id,
+        NULL::varchar                           AS bank_name
 
     FROM {{ source('raw', 'tb_anketa_oracle') }} t
 
@@ -304,6 +312,7 @@ main_grouped AS (
         insurance_type,
         product_category,
         product_name,
+        bank_name,
         SUM(oplsum)      AS oplsum,
         SUM(kom_sum)     AS kom_sum,
         SUM(claim_value) AS claim_value,
@@ -315,7 +324,8 @@ main_grouped AS (
         channels,
         insurance_type,
         product_category,
-        product_name
+        product_name,
+        bank_name
 
 ),
 
@@ -331,6 +341,7 @@ ras_grouped AS (
         d.insurance_type,
         d.product_category,
         d.product_name,
+        d.bank_name,
         SUM(COALESCE(r.tb_summa, 0)) AS ras_value
     FROM main_data d
     LEFT JOIN rastorg r
@@ -342,7 +353,8 @@ ras_grouped AS (
         d.channels,
         d.insurance_type,
         d.product_category,
-        d.product_name
+        d.product_name,
+        d.bank_name
 
 )
 
@@ -360,6 +372,7 @@ SELECT
     m.kom_sum,
     m.claim_value,
     m.fifty,
+    m.bank_name,
     COALESCE(r.ras_value, 0) AS ras_value
 
 FROM main_grouped m
@@ -371,6 +384,7 @@ LEFT JOIN ras_grouped r
     AND r.insurance_type   = m.insurance_type
     AND r.product_category = m.product_category
     AND r.product_name     = m.product_name
+    AND (r.bank_name = m.bank_name OR (r.bank_name IS NULL AND m.bank_name IS NULL))
 
 ORDER BY
     m.month,

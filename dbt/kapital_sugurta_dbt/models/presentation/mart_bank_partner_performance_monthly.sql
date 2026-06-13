@@ -49,6 +49,20 @@ channel_dims AS (
     WHERE payment_date IS NOT NULL
 ),
 
+-- 1b. DEDUPLICATED DIMENSIONS FOR COMMISSION JOIN
+deduped_channel_dims AS (
+    SELECT DISTINCT ON (anketa_id)
+        anketa_id,
+        insurance_type,
+        product_category,
+        product_name,
+        sales_channel,
+        agent_type,
+        agent_name
+    FROM {{ ref('curated_sales_channels') }}
+    ORDER BY anketa_id, payment_date DESC
+),
+
 -- 2. PREMIUMS
 premium_agg AS (
     SELECT
@@ -70,8 +84,8 @@ premium_agg AS (
 ),
 
 -- 3. COMMISSIONS
---    FIX: Use commission_date (not payment_date) and LEFT JOIN to channel_dims
---    so OSAGO commissions (from tb_oplata_oracle) are NOT dropped.
+--    FIX: Use commission_date (not payment_date) and LEFT JOIN to deduped_channel_dims
+--    so OSAGO commissions (from tb_oplata_oracle) are NOT dropped and not duplicated.
 --    curated_agency_commissions already carries product_category and entity_type_flag.
 commission_agg AS (
     SELECT
@@ -86,7 +100,7 @@ commission_agg AS (
         COALESCE(sc.agent_name,        'Other')          AS agent_name,
         SUM(cm.commission_amount_uzs) AS agency_commission_volume_uzs
     FROM {{ ref('curated_agency_commissions') }} cm
-    LEFT JOIN channel_dims sc ON sc.anketa_id = cm.anketa_id
+    LEFT JOIN deduped_channel_dims sc ON sc.anketa_id = cm.anketa_id
     LEFT JOIN partner_map pm  ON pm.anketa_id  = cm.anketa_id
     WHERE cm.commission_date IS NOT NULL
     GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9

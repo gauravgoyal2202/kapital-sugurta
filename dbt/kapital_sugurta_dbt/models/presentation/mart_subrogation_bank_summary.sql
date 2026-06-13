@@ -100,12 +100,13 @@ terminated_monthly AS (
 recoveries_monthly AS (
     SELECT
         DATE_TRUNC('month', r.recovery_payment_date)::DATE             AS report_month,
-        COALESCE(pm_fallback.standardized_partner_name, r.bank_partner_name) AS bank_partner_name,
+        COALESCE(sp.bank_partner_name, pm_fallback.standardized_partner_name, r.bank_partner_name, 'Direct/No Partner') AS bank_partner_name,
         COALESCE(r.product_category, 'Other')                          AS product_category,
         CASE WHEN COALESCE(r.fizyur, 0) = 0 THEN 'Physical' ELSE 'Juridical' END AS customer_segment,
         SUM(r.total_recovery_amount)                                   AS recovery,
         AVG(r.recovery_processing_time_days)                           AS avg_processing_time
     FROM {{ ref('curated_subrogation_recoveries') }} r
+    LEFT JOIN standardized_partners sp ON sp.anketa_id = r.anketa_id
     LEFT JOIN (
         SELECT DISTINCT raw_partner_name, standardized_partner_name
         FROM {{ ref('partner_mapping') }}
@@ -170,42 +171,42 @@ base_data AS (
 )
 
 SELECT
-    curr.bank_partner_name                             AS bank_name,
-    curr.product_category,
-    curr.customer_segment,
-    curr.report_month,
-    curr.year_num::INT                                 AS report_year,
-    (curr.year_num - 1)::INT                           AS prev_year,
+    COALESCE(curr.bank_partner_name, prev.bank_partner_name)           AS bank_name,
+    COALESCE(curr.product_category, prev.product_category)             AS product_category,
+    COALESCE(curr.customer_segment, prev.customer_segment)             AS customer_segment,
+    COALESCE(curr.report_month, (prev.report_month + INTERVAL '1 year')::DATE) AS report_month,
+    EXTRACT(YEAR FROM COALESCE(curr.report_month, (prev.report_month + INTERVAL '1 year')::DATE))::INT AS report_year,
+    (EXTRACT(YEAR FROM COALESCE(curr.report_month, (prev.report_month + INTERVAL '1 year')::DATE)) - 1)::INT AS prev_year,
 
     -- PREMIUMS (CY & PY)
-    ROUND(curr.premium::NUMERIC, 3)                    AS insurance_premium_volume_curr_year_uzs,
-    ROUND(COALESCE(prev.premium, 0)::NUMERIC, 3)       AS insurance_premium_volume_prev_year_uzs,
+    ROUND(COALESCE(curr.premium, 0)::NUMERIC, 3)                       AS insurance_premium_volume_curr_year_uzs,
+    ROUND(COALESCE(prev.premium, 0)::NUMERIC, 3)                       AS insurance_premium_volume_prev_year_uzs,
 
     -- AGENCY COMMISSIONS (CY & PY)
-    ROUND(curr.commission::NUMERIC, 3)                 AS agency_commission_volume_curr_year_uzs,
-    ROUND(COALESCE(prev.commission, 0)::NUMERIC, 3)    AS agency_commission_volume_prev_year_uzs,
+    ROUND(COALESCE(curr.commission, 0)::NUMERIC, 3)                    AS agency_commission_volume_curr_year_uzs,
+    ROUND(COALESCE(prev.commission, 0)::NUMERIC, 3)                    AS agency_commission_volume_prev_year_uzs,
 
     -- CLAIMS (CY & PY)
-    ROUND(curr.claims::NUMERIC, 3)                     AS insurance_claims_volume_curr_year_uzs,
-    ROUND(COALESCE(prev.claims, 0)::NUMERIC, 3)        AS insurance_claims_volume_prev_year_uzs,
+    ROUND(COALESCE(curr.claims, 0)::NUMERIC, 3)                        AS insurance_claims_volume_curr_year_uzs,
+    ROUND(COALESCE(prev.claims, 0)::NUMERIC, 3)                        AS insurance_claims_volume_prev_year_uzs,
 
     -- TERMINATED CONTRACTS (CY & PY)
-    ROUND(curr.terminated::NUMERIC, 3)                 AS terminated_contracts_volume_curr_year_uzs,
-    ROUND(COALESCE(prev.terminated, 0)::NUMERIC, 3)    AS terminated_contracts_volume_prev_year_uzs,
+    ROUND(COALESCE(curr.terminated, 0)::NUMERIC, 3)                    AS terminated_contracts_volume_curr_year_uzs,
+    ROUND(COALESCE(prev.terminated, 0)::NUMERIC, 3)                    AS terminated_contracts_volume_prev_year_uzs,
 
     -- SUBROGATION RECOVERY (CY & PY)
-    ROUND(curr.recovery::NUMERIC, 3)                   AS subrogation_recovery_curr_year_uzs,
-    ROUND(COALESCE(prev.recovery, 0)::NUMERIC, 3)      AS subrogation_recovery_prev_year_uzs,
+    ROUND(COALESCE(curr.recovery, 0)::NUMERIC, 3)                      AS subrogation_recovery_curr_year_uzs,
+    ROUND(COALESCE(prev.recovery, 0)::NUMERIC, 3)                      AS subrogation_recovery_prev_year_uzs,
 
     -- NET PROFIT FORMULA (CY):
     --   Premium - Agency Commissions - Claims - Terminated + Subrogation Recovery
     ROUND(
         (
-            curr.premium
-          - curr.commission
-          - curr.claims
-          - curr.terminated
-          + curr.recovery
+            COALESCE(curr.premium, 0)
+          - COALESCE(curr.commission, 0)
+          - COALESCE(curr.claims, 0)
+          - COALESCE(curr.terminated, 0)
+          + COALESCE(curr.recovery, 0)
         )::NUMERIC, 3
     ) AS net_profit_formula_curr_year_uzs,
 
@@ -221,16 +222,15 @@ SELECT
     ) AS net_profit_formula_prev_year_uzs,
 
     -- AVG RECOVERY PROCESSING TIME
-    ROUND(curr.avg_processing_time::NUMERIC, 0)        AS avg_recovery_processing_time_from_debt_occurrence_days
+    ROUND(COALESCE(curr.avg_processing_time, 0)::NUMERIC, 0)           AS avg_recovery_processing_time_from_debt_occurrence_days
 
 FROM base_data curr
 
 -- Prior year self-join (same month, one year back)
-LEFT JOIN base_data prev
+FULL OUTER JOIN base_data prev
     ON  prev.bank_partner_name = curr.bank_partner_name
     AND prev.product_category  = curr.product_category
     AND prev.customer_segment  = curr.customer_segment
-    AND prev.year_num          = curr.year_num  - 1
-    AND prev.month_num         = curr.month_num
+    AND prev.report_month      = (curr.report_month - INTERVAL '1 year')::DATE
 
-ORDER BY curr.report_month DESC, insurance_premium_volume_curr_year_uzs DESC
+ORDER BY report_month DESC, insurance_premium_volume_curr_year_uzs DESC
