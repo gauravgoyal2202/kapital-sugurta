@@ -45,8 +45,8 @@ log "========================================"
 log "Starting ETL Pipeline..."
 
 # 0. Pull latest changes from Git
-# log "Pulling latest changes from git..."
-# git pull || send_alert "Git Pull"
+log "Pulling latest changes from git..."
+git pull origin refactor/codebase-restructure || send_alert "Git Pull"
 
 # 1. Delete logs older than 15 days
 log "Cleaning up logs older than 15 days in $LOG_DIR..."
@@ -78,7 +78,7 @@ log "Changing directory to dbt project..."
 cd dbt/kapital_sugurta_dbt || send_alert "Changing to dbt directory"
 
 log "Running dbt..."
-dbt docs generate || send_alert "dbt run"
+dbt run || send_alert "dbt run"
 
 log "Changing back to root directory..."
 cd ../.. || send_alert "Changing back to root directory"

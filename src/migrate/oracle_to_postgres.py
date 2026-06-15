@@ -313,7 +313,7 @@ def migrate_table(ora_conn, pg_conn, table_name):
         try:
             refresh_type = 'INCREMENTAL' if (inc_col and last_watermark) else 'FULL'
             load_strategy = 'UPSERT' if pk_cols else 'TRUNCATE_AND_RELOAD'
-            run_id, _ = start_metadata_log(pg_table, refresh_type, load_strategy, source_table=table_name)
+            run_id, _ = start_metadata_log(pg_table, refresh_type, load_strategy=load_strategy, source_table=table_name)
         except Exception as e:
             logging.warning(f"Failed to start metadata log: {e}")
 

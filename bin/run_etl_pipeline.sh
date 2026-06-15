@@ -39,7 +39,7 @@ log "Starting ETL Pipeline..."
 
 # 0. Pull latest changes from Git
 log "Pulling latest changes from git..."
-git pull origin main || send_alert "Git Pull"
+git pull origin refactor/codebase-restructure || send_alert "Git Pull"
 
 # 1. Delete logs older than 15 days in a standard way
 log "Cleaning up logs older than 15 days in $LOG_DIR..."
