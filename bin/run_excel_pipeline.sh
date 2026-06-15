@@ -16,21 +16,29 @@ log() {
 
 # Function to send alert email using standard approach from etl_utils.py
 send_alert() {
-    local step=$1
-    log "ERROR: Excel Pipeline failed at step: $step"
+    local step="$1"
+    log "ERROR: Pipeline failed at step: $step"
     
-    # Inline python call to use the project's send_email utility
-    python -c "
-import sys
+    # Pass Bash values safely into Python through environment variables.
+    PIPELINE_FAILED_STEP="$step" \
+    PIPELINE_FAILED_TIME="$(date '+%Y-%m-%d %H:%M:%S')" \
+    python - <<'PY'
 import os
-# Ensure the project root is in the python path to import scripts
+import sys
+
 sys.path.append(os.getcwd())
+
 from src.utils.etl_utils import send_email
 
-subject = 'Excel Pipeline Failure'
-body = f'Excel Pipeline failed at step: {$step} on $(date '+%Y-%m-%d %H:%M:%S')'
+step = os.environ.get("PIPELINE_FAILED_STEP", "Unknown step")
+failed_time = os.environ.get("PIPELINE_FAILED_TIME", "")
+
+subject = "Excel Pipeline Failure"
+body = f"Excel Pipeline failed at step: {step} on {failed_time}"
+
 send_email(subject, body)
-"
+PY
+
     exit 1
 }
 
@@ -39,7 +47,7 @@ log "Starting Excel Pipeline..."
 
 # 0. Pull latest changes from Git
 log "Pulling latest changes from git..."
-git pull || send_alert "Git Pull"
+git pull origin refactor/codebase-restructure || send_alert "Git Pull"
 
 # 1. Delete logs older than 15 days in a standard way
 log "Cleaning up logs older than 15 days in $LOG_DIR..."
@@ -56,8 +64,8 @@ python src/extract/extract_solvency.py || send_alert "extract_solvency.py"
 log "Running extract_nps.py..."
 python src/extract/extract_nps.py || send_alert "extract_nps.py"
 
-log "Running extract_market_share.py..."
-python src/extract/extract_market_share.py || send_alert "extract_market_share.py"
+# log "Running extract_market_share.py..."
+# python src/extract/extract_market_share.py || send_alert "extract_market_share.py"
 
 log "Excel Pipeline completed successfully."
 log "========================================"

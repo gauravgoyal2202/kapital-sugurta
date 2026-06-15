@@ -11,6 +11,8 @@ import traceback
 
 # Load environment variables
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+if BASE_DIR not in sys.path:
+    sys.path.append(BASE_DIR)
 load_dotenv(os.path.join(BASE_DIR, '.env'))
 
 # Configure Logging

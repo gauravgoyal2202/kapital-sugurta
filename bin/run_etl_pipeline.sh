@@ -14,23 +14,30 @@ log() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" | tee -a "$LOG_FILE"
 }
 
-# Function to send alert email using standard approach from etl_utils.py
 send_alert() {
-    local step=$1
+    local step="$1"
     log "ERROR: Pipeline failed at step: $step"
     
-    # Inline python call to use the project's send_email utility
-    python -c "
-import sys
+    # Pass Bash values safely into Python through environment variables.
+    PIPELINE_FAILED_STEP="$step" \
+    PIPELINE_FAILED_TIME="$(date '+%Y-%m-%d %H:%M:%S')" \
+    python - <<'PY'
 import os
-# Ensure the project root is in the python path to import scripts
+import sys
+
 sys.path.append(os.getcwd())
+
 from src.utils.etl_utils import send_email
 
-subject = 'ETL Pipeline Failure'
-body = f'ETL Pipeline failed at step: {$step} on $(date '+%Y-%m-%d %H:%M:%S')'
+step = os.environ.get("PIPELINE_FAILED_STEP", "Unknown step")
+failed_time = os.environ.get("PIPELINE_FAILED_TIME", "")
+
+subject = "ETL Pipeline Failure"
+body = f"ETL Pipeline failed at step: {step} on {failed_time}"
+
 send_email(subject, body)
-"
+PY
+
     exit 1
 }
 
