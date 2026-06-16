@@ -441,10 +441,15 @@ if __name__ == '__main__':
 
     except Exception as e:
         logging.error(f"Critical Migration error: {e}")
+        sys.stderr.write(f"Critical Migration error: {e}\n")
+        sys.exit(1)
     finally:
         if ora: ora.close()
         if pg: pg.close()
         logging.info("Connections closed successfully.")
+
+    if success_count < len(results):
+        sys.exit(1)
 
     """
 CONVERTED POSTGRESQL QUERY:

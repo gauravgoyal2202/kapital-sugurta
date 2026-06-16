@@ -1,71 +1,192 @@
 #!/bin/bash
+# =============================================================================
+#  run_excel_pipeline.sh — Kapital Sugurta Excel / Google Drive ETL Pipeline
+#  Schedule : 30 19 * * * (daily at 19:30, runs 1 hour before Core ETL)
+#  Steps    : Git pull → Log rotation → Solvency → NPS (→ Market Share)
+#  Alerting : Detailed HTML email on every step failure via send_pipeline_alert
+# =============================================================================
 
-# Change directory to the project root
+# ── Change to project root ────────────────────────────────────────────────────
 cd "$(dirname "$0")/.." || exit 1
 
-# Configuration
+# ── Configuration ─────────────────────────────────────────────────────────────
+PIPELINE_NAME="Excel / Google Drive ETL Pipeline (run_excel_pipeline.sh)"
 LOG_DIR="logs"
 mkdir -p "$LOG_DIR"
-# Standard industry practice: Rotate logs by appending the current date to the log file name
 LOG_FILE="$LOG_DIR/excel_pipeline_run_$(date '+%Y%m%d').log"
+TMPDIR_ETL="$LOG_DIR/.tmp_excel"
+mkdir -p "$TMPDIR_ETL"
+PYTHON_BIN="python"
 
-# Function to log messages
+# ── Logging helper ────────────────────────────────────────────────────────────
 log() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" | tee -a "$LOG_FILE"
 }
 
-# Function to send alert email using standard approach from etl_utils.py
+# =============================================================================
+#  send_alert STEP ERROR_DETAIL [EXTRA_KEY1 EXTRA_VAL1 ...]
+# =============================================================================
 send_alert() {
     local step="$1"
-    log "ERROR: Pipeline failed at step: $step"
-    
-    # Pass Bash values safely into Python through environment variables.
-    PIPELINE_FAILED_STEP="$step" \
-    PIPELINE_FAILED_TIME="$(date '+%Y-%m-%d %H:%M:%S')" \
-    python - <<'PY'
-import os
-import sys
+    local error_detail="$2"
+    shift 2
+    local extra_pairs=""
+    while [[ $# -ge 2 ]]; do
+        extra_pairs+="$1|||$2\n"
+        shift 2
+    done
 
-sys.path.append(os.getcwd())
+    log "ERROR: Pipeline failed at step: [$step]"
+    log "Error detail: $error_detail"
 
-from src.utils.etl_utils import send_email
+    PIPELINE_FAILED_STEP="$step"           \
+    PIPELINE_FAILED_ERROR="$error_detail"  \
+    PIPELINE_NAME_ENV="$PIPELINE_NAME"     \
+    PIPELINE_EXTRA_PAIRS="$extra_pairs"    \
+    "$PYTHON_BIN" - <<'PY'
+import os, sys
+sys.path.insert(0, os.getcwd())
+from src.utils.etl_utils import send_pipeline_alert
 
-step = os.environ.get("PIPELINE_FAILED_STEP", "Unknown step")
-failed_time = os.environ.get("PIPELINE_FAILED_TIME", "")
+step         = os.environ.get("PIPELINE_FAILED_STEP",  "Unknown step")
+error_detail = os.environ.get("PIPELINE_FAILED_ERROR", "")
+pipeline     = os.environ.get("PIPELINE_NAME_ENV",     "Excel ETL Pipeline")
+raw_pairs    = os.environ.get("PIPELINE_EXTRA_PAIRS",  "")
 
-subject = "Excel Pipeline Failure"
-body = f"Excel Pipeline failed at step: {step} on {failed_time}"
+extra_rows = []
+for line in raw_pairs.split("\\n"):
+    line = line.strip()
+    if "|||" in line:
+        k, v = line.split("|||", 1)
+        extra_rows.append((k.strip(), v.strip()))
 
-send_email(subject, body)
+send_pipeline_alert(
+    step_name    = step,
+    error_detail = error_detail,
+    pipeline_name= pipeline,
+    extra_rows   = extra_rows or None,
+)
 PY
-
     exit 1
 }
 
-log "========================================"
-log "Starting Excel Pipeline..."
 
-# 0. Pull latest changes from Git
-log "Pulling latest changes from git..."
-git pull origin refactor/codebase-restructure || send_alert "Git Pull"
+# =============================================================================
+#  PIPELINE START
+# =============================================================================
+log "========================================================================"
+log "  $PIPELINE_NAME  starting..."
+log "========================================================================"
 
-# 1. Delete logs older than 15 days in a standard way
-log "Cleaning up logs older than 15 days in $LOG_DIR..."
+# ── Step 0 : Git pull ─────────────────────────────────────────────────────────
+log "[Step 0] Pulling latest code from git (branch: refactor/codebase-restructure)..."
+STEP0_ERR=$(git pull origin refactor/codebase-restructure 2>&1 >/dev/null)
+if [[ $? -ne 0 ]]; then
+    send_alert "Git Pull" "$STEP0_ERR" \
+        "Branch" "refactor/codebase-restructure" \
+        "Remote" "origin"
+fi
+log "[Step 0] Git pull OK."
+
+# ── Step 1 : Log rotation ─────────────────────────────────────────────────────
+log "[Step 1] Rotating logs older than 15 days..."
 find "$LOG_DIR" -name "excel_pipeline_run_*.log" -type f -mtime +15 -exec rm {} \;
+log "[Step 1] Log rotation OK."
 
-# 2. Activate virtual environment
-log "Activating virtual environment..."
-source .venv/bin/activate || send_alert "Virtual Environment Activation"
+# ── Step 2 : Activate virtual environment ─────────────────────────────────────
+log "[Step 2] Activating Python virtual environment..."
+STEP2_ERR=$(source .venv/bin/activate 2>&1)
+if [[ $? -ne 0 ]]; then
+    send_alert "Virtual Environment Activation" \
+        "Failed to activate .venv/bin/activate\n\n$STEP2_ERR" \
+        "Expected path" "$(pwd)/.venv/bin/activate"
+fi
 
-# 3. Extract Excel data and store to Postgres
-log "Running extract_solvency.py..."
-python src/extract/extract_solvency.py || send_alert "extract_solvency.py"
+if [ -f ".venv/Scripts/python" ]; then
+    PYTHON_BIN=".venv/Scripts/python"
+elif [ -f ".venv/Scripts/python.exe" ]; then
+    PYTHON_BIN=".venv/Scripts/python.exe"
+elif [ -f ".venv/bin/python" ]; then
+    PYTHON_BIN=".venv/bin/python"
+fi
 
-log "Running extract_nps.py..."
-python src/extract/extract_nps.py || send_alert "extract_nps.py"
+log "[Step 2] Virtual environment activated OK (Using Python: $PYTHON_BIN)."
 
-# log "Running extract_market_share.py..."
-# python src/extract/extract_market_share.py || send_alert "extract_market_share.py"
+# ── Step 3 : Solvency Adequacy extraction ────────────────────────────────────
+log "[Step 3] Running extract_solvency.py (Google Drive → raw.solvency_adequacy)..."
+STEP3_STDERR_FILE="$TMPDIR_ETL/step3_solvency.err"
+"$PYTHON_BIN" src/extract/extract_solvency.py > >(tee -a "$LOG_FILE") 2>"$STEP3_STDERR_FILE"
+STEP3_EXIT=$?
+STEP3_ERR=$(cat "$STEP3_STDERR_FILE")
+if [[ $STEP3_EXIT -ne 0 ]]; then
+    # Fallback to reading logs if stderr is empty
+    if [[ -z "$STEP3_ERR" ]]; then
+        if [[ -f "logs/load_solvency_adequacy.log" ]]; then
+            STEP3_ERR=$(tail -n 25 logs/load_solvency_adequacy.log)
+        else
+            STEP3_ERR="No stderr captured. Last log lines:\n$(tail -n 25 "$LOG_FILE")"
+        fi
+    fi
+    HINT="See error detail below."
+    if echo "$STEP3_ERR" | grep -qi "google\|gdown\|403\|drive\|permission"; then
+        HINT="Google Drive download failed. Verify GDRIVE_SOLVENCY_ADEQUACY_LINK in .env and ensure the folder is publicly accessible."
+    elif echo "$STEP3_ERR" | grep -qi "connection refused\|could not connect\|timeout"; then
+        HINT="Cannot reach PostgreSQL. Verify PG_HOST/PG_PORT/PG_DATABASE in .env."
+    elif echo "$STEP3_ERR" | grep -qi "password authentication\|authentication failed"; then
+        HINT="PostgreSQL login failed. Verify PG_USER and PG_PASSWORD in .env."
+    fi
+    send_alert "Solvency Adequacy Extraction" "$STEP3_ERR" \
+        "Script"      "src/extract/extract_solvency.py" \
+        "Target Table" "raw.solvency_adequacy" \
+        "Diagnosis"   "$HINT"
+fi
+log "[Step 3] Solvency extraction OK."
 
-log "Excel Pipeline completed successfully."
-log "========================================"
+# ── Step 4 : NPS Survey extraction ───────────────────────────────────────────
+log "[Step 4] Running extract_nps.py (Google Drive → raw.nps_survey_responses)..."
+STEP4_STDERR_FILE="$TMPDIR_ETL/step4_nps.err"
+"$PYTHON_BIN" src/extract/extract_nps.py > >(tee -a "$LOG_FILE") 2>"$STEP4_STDERR_FILE"
+STEP4_EXIT=$?
+STEP4_ERR=$(cat "$STEP4_STDERR_FILE")
+if [[ $STEP4_EXIT -ne 0 ]]; then
+    # Fallback to reading logs if stderr is empty
+    if [[ -z "$STEP4_ERR" ]]; then
+        if [[ -f "logs/load_nps.log" ]]; then
+            STEP4_ERR=$(tail -n 25 logs/load_nps.log)
+        else
+            STEP4_ERR="No stderr captured. Last log lines:\n$(tail -n 25 "$LOG_FILE")"
+        fi
+    fi
+    HINT="See error detail below."
+    if echo "$STEP3_ERR" | grep -qi "google\|gdown\|403\|drive\|permission"; then
+        HINT="Google Drive download failed. Verify GDRIVE_NPS_LINK in .env and ensure the folder is publicly accessible."
+    elif echo "$STEP3_ERR" | grep -qi "connection refused\|could not connect\|timeout"; then
+        HINT="Cannot reach PostgreSQL. Verify PG_HOST/PG_PORT/PG_DATABASE in .env."
+    fi
+    send_alert "NPS Survey Extraction" "$STEP4_ERR" \
+        "Script"      "src/extract/extract_nps.py" \
+        "Target Table" "raw.nps_survey_responses" \
+        "Diagnosis"   "$HINT"
+fi
+log "[Step 4] NPS extraction OK."
+
+# ── Step 5 : Market Share extraction (currently disabled) ─────────────────────
+# Uncomment the block below to re-enable market share extraction
+# log "[Step 5] Running extract_market_share.py..."
+# STEP5_STDERR_FILE="$TMPDIR_ETL/step5_market.err"
+# python src/extract/extract_market_share.py > >(tee -a "$LOG_FILE") 2>"$STEP5_STDERR_FILE"
+# STEP5_EXIT=$?
+# STEP5_ERR=$(cat "$STEP5_STDERR_FILE")
+# if [[ $STEP5_EXIT -ne 0 ]]; then
+#     send_alert "Market Share Extraction" "$STEP5_ERR" \
+#         "Script"      "src/extract/extract_market_share.py" \
+#         "Target Table" "raw.market_share_insurance_class_stats"
+# fi
+# log "[Step 5] Market share extraction OK."
+
+# ── Cleanup ───────────────────────────────────────────────────────────────────
+rm -rf "$TMPDIR_ETL"
+
+log "========================================================================"
+log "  $PIPELINE_NAME  completed successfully."
+log "========================================================================"

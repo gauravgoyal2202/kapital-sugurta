@@ -169,6 +169,7 @@ class OneCExtractor:
             logger.info("Database connection established and schema verified.")
         except Exception as e:
             logger.error(f"Database connection failed: {e}")
+            sys.stderr.write(f"Database connection failed: {e}\n")
             sys.exit(1)
 
     def close_db(self):
@@ -429,7 +430,9 @@ class OneCExtractor:
         self.close_db()
 
         if errors:
-            logger.error(f"\nProcess finished with {len(errors)} error(s): {', '.join(errors)}")
+            err_msg = f"\nProcess finished with {len(errors)} error(s): {', '.join(errors)}"
+            logger.error(err_msg)
+            sys.stderr.write(err_msg + "\n")
             sys.exit(1)
         else:
             logger.info("\nAll tasks completed successfully.")
