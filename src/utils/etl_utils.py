@@ -160,7 +160,7 @@ def init_metadata_table():
             
         conn.commit()
 
-def start_metadata_log(target_table, refresh_type, source_table=None, watermark_col=None, primary_keys=None, load_strategy=None):
+def start_metadata_log(target_table, refresh_type, source_table=None, watermark_col=None, primary_keys=None, load_strategy=None, pipeline_name='oracle_to_postgres', source_system='oracle', source_schema='KAPITAL_SUGURTA', target_system='postgres', target_schema='raw'):
     """Inserts a new run record with 'RUNNING' status and returns the run_id."""
     import os
     import datetime
@@ -188,15 +188,15 @@ def start_metadata_log(target_table, refresh_type, source_table=None, watermark_
             cur.execute("""
                 INSERT INTO raw.etl_refresh_metadata (
                     pipeline_name, source_system, source_schema, source_table_name,
-                    target_schema, target_table_name, refresh_type, load_strategy,
+                    target_system, target_schema, target_table_name, refresh_type, load_strategy,
                     watermark_column, last_watermark_value, primary_key_columns,
                     refresh_start_time, status, batch_id
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING run_id;
             """, (
-                'oracle_to_postgres', 'oracle', 'KAPITAL_SUGURTA', source_table or target_table.replace('_oracle', '').upper(),
-                'raw', target_table, refresh_type, load_strategy,
+                pipeline_name, source_system, source_schema, source_table or target_table.replace('_oracle', '').upper(),
+                target_system, target_schema, target_table, refresh_type, load_strategy,
                 watermark_col, last_wm, primary_keys,
                 start_time, 'RUNNING', batch_id
             ))

@@ -331,7 +331,10 @@ def main():
             target_table=TARGET_TABLE,
             refresh_type='INCREMENTAL',
             source_table='gdrive_market_share_excel',
-            load_strategy='UPSERT'
+            load_strategy='UPSERT',
+            pipeline_name='market_share_excel_to_postgres',
+            source_system='google_drive',
+            source_schema=None
         )
     except Exception as e:
         log.warning(f"Could not start metadata log: {e}")

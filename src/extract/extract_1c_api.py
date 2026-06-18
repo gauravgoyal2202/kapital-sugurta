@@ -392,7 +392,10 @@ class OneCExtractor:
                     target_table=table.split('.')[-1],
                     refresh_type='FULL' if truncate else 'INCREMENTAL',
                     load_strategy='UPSERT',
-                    source_table=f'1c_api_{ep}'
+                    source_table=f'1c_api_{ep}',
+                    pipeline_name='1c_api_extraction',
+                    source_system='1c_api',
+                    source_schema=None
                 )
             except Exception as e:
                 logger.warning(f"Failed to start metadata log: {e}")

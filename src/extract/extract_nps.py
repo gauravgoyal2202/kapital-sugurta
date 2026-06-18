@@ -45,7 +45,10 @@ def main():
             target_table=TARGET_TABLE,
             refresh_type='FULL',
             source_table='gdrive_nps_excel',
-            load_strategy='TRUNCATE_AND_RELOAD'
+            load_strategy='TRUNCATE_AND_RELOAD',
+            pipeline_name='nps_excel_to_postgres',
+            source_system='google_drive',
+            source_schema=None
         )
     except Exception as e:
         logging.warning(f"Could not start metadata log: {e}")

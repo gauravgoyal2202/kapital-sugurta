@@ -134,19 +134,19 @@ log "  $PIPELINE_NAME  starting..."
 log "========================================================================"
 
 # ── Step 0 : Git pull ─────────────────────────────────────────────────────────
-log "[Step 0] Pulling latest code from git (branch: refactor/codebase-restructure)..."
-STEP0_ERR=$(git pull origin refactor/codebase-restructure 2>&1 >/dev/null)
+log "[Step 0] Pulling latest code from git (branch: main)..."
+STEP0_ERR=$(git pull origin main 2>&1 >/dev/null)
 if [[ $? -ne 0 ]]; then
     send_alert "Git Pull" "$STEP0_ERR" \
-        "Branch" "refactor/codebase-restructure" \
+        "Branch" "main" \
         "Remote" "origin"
 fi
 log "[Step 0] Git pull OK."
 
 # ── Step 1 : Log rotation ─────────────────────────────────────────────────────
-log "[Step 1] Rotating logs older than 15 days..."
-find "$LOG_DIR" -name "etl_pipeline_run_*.log" -type f -mtime +15 -exec rm {} \;
-find "$LOG_DIR" -name "dbt_run_*.log"          -type f -mtime +15 -exec rm {} \;
+log "[Step 1] Rotating logs older than 8 days..."
+find "$LOG_DIR" -name "etl_pipeline_run_*.log" -type f -mtime +8 -exec rm {} \;
+find "$LOG_DIR" -name "dbt_run_*.log"          -type f -mtime +8 -exec rm {} \;
 log "[Step 1] Log rotation OK."
 
 # ── Step 2 : Activate virtual environment ─────────────────────────────────────
@@ -159,19 +159,19 @@ if [[ $? -ne 0 ]]; then
 fi
 
 if [ -f ".venv/Scripts/python" ]; then
-    PYTHON_BIN=".venv/Scripts/python"
+    PYTHON_BIN="$(pwd)/.venv/Scripts/python"
 elif [ -f ".venv/Scripts/python.exe" ]; then
-    PYTHON_BIN=".venv/Scripts/python.exe"
+    PYTHON_BIN="$(pwd)/.venv/Scripts/python.exe"
 elif [ -f ".venv/bin/python" ]; then
-    PYTHON_BIN=".venv/bin/python"
+    PYTHON_BIN="$(pwd)/.venv/bin/python"
 fi
 
 if [ -f ".venv/Scripts/dbt.exe" ]; then
-    DBT_BIN=".venv/Scripts/dbt.exe"
+    DBT_BIN="$(pwd)/.venv/Scripts/dbt.exe"
 elif [ -f ".venv/Scripts/dbt" ]; then
-    DBT_BIN=".venv/Scripts/dbt"
+    DBT_BIN="$(pwd)/.venv/Scripts/dbt"
 elif [ -f ".venv/bin/dbt" ]; then
-    DBT_BIN=".venv/bin/dbt"
+    DBT_BIN="$(pwd)/.venv/bin/dbt"
 fi
 
 log "[Step 2] Virtual environment activated OK (Using Python: $PYTHON_BIN, dbt: $DBT_BIN)."
@@ -260,7 +260,7 @@ cd dbt/kapital_sugurta_dbt || \
 # Run dbt; capture both stdout (to log file) and stderr (for alert parsing)
 STEP5_STDERR_FILE="../../$TMPDIR_ETL/step5_dbt.err"
 "$DBT_BIN" run 2>"$STEP5_STDERR_FILE" | tee -a "../../$LOG_FILE"
-STEP5_EXIT=$?
+STEP5_EXIT=${PIPESTATUS[0]}
 STEP5_ERR=$(cat "$STEP5_STDERR_FILE")
 
 if [[ $STEP5_EXIT -ne 0 ]]; then
