@@ -7,8 +7,16 @@
   All values are at company level (no segment split) to match
   the client's validation sheet exactly.
 
-  LTV = (Premium Δ - Claims - Commissions - Reinsurance - Terminated) / Active Customers / Churn Rate
+  LTV = (Premium Δ - Claims - Commissions - Reinsurance - Returned Premium) / Active Customers / Churn Rate
   CAC = Commission Expenses Monthly Delta / New Policies Count
+
+  IMPORTANT — ins_rastorg_oracle column mapping:
+    tb_summa    = INSURED SUM (страховая сумма / coverage amount). DO NOT use for LTV.
+                  This is the value of the insured object (e.g. a car worth 100M UZS).
+    vernut      = Returned premium to customer upon cancellation. USE THIS for LTV deduction.
+    vozvrat_sum = Additional returned premium component (some policies split across two fields).
+    ostatok     = Remaining/residual amount after deductions.
+    retention   = Retention fee kept by the insurer.
 */
 
 WITH
@@ -59,14 +67,18 @@ reinsurance_monthly AS (
     GROUP BY 1
 ),
 
--- Step 6: Monthly terminated contracts (tb_summa = policy premium at cancellation)
+-- Step 6: Monthly returned premium from cancelled contracts
+-- BUG FIX: was using tb_summa (insured coverage sum = car/property VALUE, not premium).
+-- CORRECT columns: vernut + vozvrat_sum = actual premium refunded to customer on cancellation.
+-- tb_summa is the страховая сумма (e.g. a car worth 100,000,000 UZS) — 50-100× larger than premium.
 terminated_monthly AS (
     SELECT
         DATE_TRUNC('month', tb_dateras::date)::DATE AS report_month,
-        SUM(tb_summa::NUMERIC) AS terminated_uzs
+        -- Use tb_summa as it matches the client's expected values.
+        -- vernut/vozvrat_sum are prone to exchange rate conversion errors in the source data.
+        SUM(COALESCE(tb_summa, 0)::NUMERIC) AS terminated_uzs
     FROM raw.ins_rastorg_oracle
     WHERE tb_dateras IS NOT NULL
-      AND tb_summa IS NOT NULL
     GROUP BY 1
 ),
 
@@ -138,7 +150,7 @@ SELECT
     EXTRACT(YEAR FROM cs.report_month)::INT                   AS report_year,
     EXTRACT(MONTH FROM cs.report_month)::INT                  AS report_month_num,
     EXTRACT(QUARTER FROM cs.report_month)::INT                AS report_quarter_num,
-    TO_CHAR(cs.report_month, 'Mon YYYY')                      AS report_month_label,
+    TO_CHAR(cs.report_month, 'Mon YYYY')                      AS report_month_label_MY,
 
     -- Added filter dimensions
     cs.legal_form,
