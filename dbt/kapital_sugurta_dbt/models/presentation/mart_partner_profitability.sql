@@ -14,10 +14,10 @@
     kom_sum     → agency commission paid  (UZS)
     claim_value → claims paid             (UZS, from ins_loss_oracle)
     fifty       → motivation / fifty pool (UZS, from ins_fifty_pack)
-    ras_value   → reinsurance / rastorg   (UZS, from ins_rastorg_oracle)
+    ras_value   → terminated contracts    (UZS, from ins_rastorg_oracle)
 
   Profitability formula:
-    (Premium - Commission - Claims - Motivation - Reinsurance) / Premium × 100
+    (Premium - Commission - Claims - Terminated - Motivation) / Premium × 100
 */
 
 WITH monthly_channel_agg AS (
@@ -33,7 +33,7 @@ WITH monthly_channel_agg AS (
         SUM(kom_sum)         AS commission_uzs,
         SUM(claim_value)     AS claims_uzs,
         SUM(fifty)           AS motivation_uzs,
-        SUM(ras_value)       AS reinsurance_uzs
+        SUM(ras_value)       AS terminated_uzs
 
     FROM {{ ref('curated_partner_indicators') }}
 
@@ -69,10 +69,10 @@ SELECT
     commission_uzs,
     claims_uzs,
     motivation_uzs,
-    reinsurance_uzs,
+    terminated_uzs,
 
     -- Net profit after all deductions
-    (premium_uzs - commission_uzs - claims_uzs - motivation_uzs - reinsurance_uzs)
+    (premium_uzs - commission_uzs - claims_uzs - motivation_uzs - terminated_uzs)
         AS net_profit_uzs,
 
     -- Profitability %
@@ -80,7 +80,7 @@ SELECT
         WHEN premium_uzs > 0
         THEN ROUND(
                 (
-                    (premium_uzs - commission_uzs - claims_uzs - motivation_uzs - reinsurance_uzs)
+                    (premium_uzs - commission_uzs - claims_uzs - motivation_uzs - terminated_uzs)
                     / premium_uzs * 100
                 )::NUMERIC,
              2)

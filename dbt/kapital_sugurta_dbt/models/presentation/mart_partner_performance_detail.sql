@@ -29,7 +29,7 @@ WITH base AS (
         kom_sum      AS commission_uzs,
         claim_value  AS claims_uzs,
         fifty        AS motivation_uzs,
-        ras_value    AS reinsurance_uzs,
+        ras_value    AS terminated_uzs,
         bank_name
     FROM {{ ref('curated_partner_indicators_detail') }}
 
@@ -129,12 +129,12 @@ SELECT
     ROUND(COALESCE(LAG(b.commission_uzs, 12) OVER (PARTITION BY b.user_id, b.channels, b.insurance_type, b.product_category, b.product_name ORDER BY b.month), 0)::NUMERIC, 2) AS commission_py,
     ROUND(b.claims_uzs::NUMERIC,        2)                          AS claims_uzs,
     ROUND(b.motivation_uzs::NUMERIC,    2)                          AS motivation_uzs,
-    ROUND(b.reinsurance_uzs::NUMERIC,   2)                          AS reinsurance_uzs,
+    ROUND(b.terminated_uzs::NUMERIC,    2)                          AS terminated_uzs,
 
     -- Net Profit
     ROUND(
         (b.premium_uzs - b.commission_uzs - b.claims_uzs
-            - b.motivation_uzs - b.reinsurance_uzs)::NUMERIC, 2
+            - b.motivation_uzs - b.terminated_uzs)::NUMERIC, 2
     )                                                               AS net_profit_uzs,
 
     -- ── KPI ratios ───────────────────────────────────────────────────────
@@ -150,7 +150,7 @@ SELECT
     CASE
         WHEN b.premium_uzs > 0
         THEN ROUND(
-                ((b.premium_uzs - b.commission_uzs - b.claims_uzs - b.motivation_uzs - b.reinsurance_uzs)
+                ((b.premium_uzs - b.commission_uzs - b.claims_uzs - b.motivation_uzs - b.terminated_uzs)
                   / b.premium_uzs * 100)::NUMERIC, 2)
         ELSE 0
     END                                                             AS profitability_pct,
