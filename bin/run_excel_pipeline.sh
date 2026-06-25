@@ -11,7 +11,7 @@ cd "$(dirname "$0")/.." || exit 1
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 PIPELINE_NAME="Excel / Google Drive ETL Pipeline (run_excel_pipeline.sh)"
-LOG_DIR="logs"
+LOG_DIR="$(pwd)/logs"
 mkdir -p "$LOG_DIR"
 LOG_FILE="$LOG_DIR/excel_pipeline_run_$(date '+%Y%m%d').log"
 TMPDIR_ETL="$LOG_DIR/.tmp_excel"
@@ -79,27 +79,54 @@ log "  $PIPELINE_NAME  starting..."
 log "========================================================================"
 
 # ── Step 0 : Git pull ─────────────────────────────────────────────────────────
-log "[Step 0] Pulling latest code from git (branch: refactor/codebase-restructure)..."
-STEP0_ERR=$(git pull origin refactor/codebase-restructure 2>&1 >/dev/null)
+log "[Step 0] Pulling latest code from git (branch: main)..."
+STEP0_ERR=$(git pull origin main 2>&1 >/dev/null)
 if [[ $? -ne 0 ]]; then
-    send_alert "Git Pull" "$STEP0_ERR" \
-        "Branch" "refactor/codebase-restructure" \
-        "Remote" "origin"
+    log "Step 0 failed. Retrying in 10 seconds..."
+    sleep 10
+    STEP0_ERR=$(git pull origin main 2>&1 >/dev/null)
+    if [[ $? -ne 0 ]]; then
+        send_alert "Git Pull" "$STEP0_ERR" \
+            "Branch" "main" \
+            "Remote" "origin"
+    fi
 fi
 log "[Step 0] Git pull OK."
 
 # ── Step 1 : Log rotation ─────────────────────────────────────────────────────
-log "[Step 1] Rotating logs older than 15 days..."
-find "$LOG_DIR" -name "excel_pipeline_run_*.log" -type f -mtime +15 -exec rm {} \;
+log "[Step 1] Rotating logs older than 7 days..."
+
+# Rotate cumulative log files into daily snapshots
+for logfile in load_solvency_adequacy load_nps daily_pipeline_cron; do
+    if [[ -f "$LOG_DIR/${logfile}.log" ]]; then
+        cp "$LOG_DIR/${logfile}.log" "$LOG_DIR/${logfile}_$(date '+%Y%m%d').log"
+        > "$LOG_DIR/${logfile}.log"
+    fi
+done
+
+find "$LOG_DIR" -name "excel_pipeline_run_*.log" -type f -mtime +7 -exec rm {} \;
+if [[ $? -ne 0 ]]; then
+    log "Step 1 failed. Retrying in 10 seconds..."
+    sleep 10
+    find "$LOG_DIR" -name "excel_pipeline_run_*.log" -type f -mtime +7 -exec rm {} \;
+fi
+find "$LOG_DIR" -name "load_solvency_adequacy_*.log" -type f -mtime +7 -exec rm {} \;
+find "$LOG_DIR" -name "load_nps_*.log"               -type f -mtime +7 -exec rm {} \;
+find "$LOG_DIR" -name "daily_pipeline_cron_*.log"    -type f -mtime +7 -exec rm {} \;
 log "[Step 1] Log rotation OK."
 
 # ── Step 2 : Activate virtual environment ─────────────────────────────────────
 log "[Step 2] Activating Python virtual environment..."
 STEP2_ERR=$(source .venv/bin/activate 2>&1)
 if [[ $? -ne 0 ]]; then
-    send_alert "Virtual Environment Activation" \
-        "Failed to activate .venv/bin/activate\n\n$STEP2_ERR" \
-        "Expected path" "$(pwd)/.venv/bin/activate"
+    log "Step 2 failed. Retrying in 10 seconds..."
+    sleep 10
+    STEP2_ERR=$(source .venv/bin/activate 2>&1)
+    if [[ $? -ne 0 ]]; then
+        send_alert "Virtual Environment Activation" \
+            "Failed to activate .venv/bin/activate\n\n$STEP2_ERR" \
+            "Expected path" "$(pwd)/.venv/bin/activate"
+    fi
 fi
 
 if [ -f ".venv/Scripts/python" ]; then
@@ -117,6 +144,14 @@ log "[Step 3] Running extract_solvency.py (Google Drive → raw.solvency_adequac
 STEP3_STDERR_FILE="$TMPDIR_ETL/step3_solvency.err"
 "$PYTHON_BIN" src/extract/extract_solvency.py > >(tee -a "$LOG_FILE") 2>"$STEP3_STDERR_FILE"
 STEP3_EXIT=$?
+if [[ $STEP3_EXIT -ne 0 ]]; then
+    log "Step 3 failed. Retrying in 10 seconds..."
+    sleep 10
+    > "$STEP3_STDERR_FILE"
+    "$PYTHON_BIN" src/extract/extract_solvency.py > >(tee -a "$LOG_FILE") 2>"$STEP3_STDERR_FILE"
+    STEP3_EXIT=$?
+fi
+
 STEP3_ERR=$(cat "$STEP3_STDERR_FILE")
 if [[ $STEP3_EXIT -ne 0 ]]; then
     # Fallback to reading logs if stderr is empty
@@ -147,6 +182,14 @@ log "[Step 4] Running extract_nps.py (Google Drive → raw.nps_survey_responses)
 STEP4_STDERR_FILE="$TMPDIR_ETL/step4_nps.err"
 "$PYTHON_BIN" src/extract/extract_nps.py > >(tee -a "$LOG_FILE") 2>"$STEP4_STDERR_FILE"
 STEP4_EXIT=$?
+if [[ $STEP4_EXIT -ne 0 ]]; then
+    log "Step 4 failed. Retrying in 10 seconds..."
+    sleep 10
+    > "$STEP4_STDERR_FILE"
+    "$PYTHON_BIN" src/extract/extract_nps.py > >(tee -a "$LOG_FILE") 2>"$STEP4_STDERR_FILE"
+    STEP4_EXIT=$?
+fi
+
 STEP4_ERR=$(cat "$STEP4_STDERR_FILE")
 if [[ $STEP4_EXIT -ne 0 ]]; then
     # Fallback to reading logs if stderr is empty

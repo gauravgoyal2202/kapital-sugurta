@@ -43,6 +43,7 @@ SMTP_CONFIG = {
     "pass": os.getenv("ALERT_SMTP_PASS")
 }
 SMTP_TO = os.getenv("ALERT_TO", "responsible_person@kapital.uz")
+SMTP_CC = os.getenv("ALERT_CC")
 
 def get_pg_conn():
     return psycopg2.connect(
@@ -259,11 +260,12 @@ def update_metadata(table_name, status, watermark=None, refresh_type=None, start
             ))
         conn.commit()
 
-def send_email(subject, body, to_email=None):
+def send_email(subject, body, to_email=None, cc_email=None):
     """Standard utility to send email alerts with a fallback to logging.
     Accepts either a plain string body or an HTML string body.
     """
     target_email = to_email or SMTP_TO
+    target_cc = cc_email or SMTP_CC
 
     # Check if SMTP is configured
     if not SMTP_CONFIG["server"] or not SMTP_CONFIG["user"]:
@@ -276,6 +278,8 @@ def send_email(subject, body, to_email=None):
         msg = MIMEMultipart("alternative")
         msg['From']    = SMTP_CONFIG["user"]
         msg['To']      = target_email
+        if target_cc:
+            msg['Cc']  = target_cc
         msg['Subject'] = f"[ETL ALERT] {subject}"
 
         # Attach plain-text fallback first, then HTML
@@ -295,7 +299,7 @@ def send_email(subject, body, to_email=None):
 
 
 def send_pipeline_alert(step_name, error_detail, pipeline_name="ETL Pipeline",
-                        extra_rows=None, to_email=None):
+                        extra_rows=None, to_email=None, cc_email=None):
     """
     Send a richly formatted HTML alert email for a pipeline step failure.
 
@@ -428,4 +432,4 @@ def send_pipeline_alert(step_name, error_detail, pipeline_name="ETL Pipeline",
 </body>
 </html>"""
 
-    send_email(subject, html_body, to_email=to_email)
+    send_email(subject, html_body, to_email=to_email, cc_email=cc_email)

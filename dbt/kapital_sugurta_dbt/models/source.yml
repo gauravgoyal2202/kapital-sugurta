@@ -55,3 +55,5 @@ sources:
       - name: kontragent_report
       - name: ins_bank_pturi_oracle
       - name: ins_osgo_oracle
+      - name: ins_link_oracle
+      - name: ins_link_klass_oracle

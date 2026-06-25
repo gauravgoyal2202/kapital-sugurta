@@ -54,6 +54,7 @@ class Config:
     ALERT_SMTP_PASS = os.getenv('ALERT_SMTP_PASS')
     ALERT_FROM      = os.getenv('ALERT_FROM')
     ALERT_TO        = os.getenv('ALERT_TO')
+    ALERT_CC        = os.getenv('ALERT_CC')
 
     @classmethod
     def validate(cls):
@@ -202,6 +203,8 @@ class OneCExtractor:
             msg = MIMEMultipart()
             msg['From'] = Config.ALERT_FROM or Config.ALERT_SMTP_USER or "alert@example.com"
             msg['To'] = Config.ALERT_TO
+            if Config.ALERT_CC:
+                msg['Cc'] = Config.ALERT_CC
             msg['Subject'] = subject
             msg.attach(MIMEText(message, 'plain'))
             
