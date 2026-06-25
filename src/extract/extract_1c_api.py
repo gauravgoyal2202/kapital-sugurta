@@ -193,34 +193,9 @@ class OneCExtractor:
         return month_ends
 
     # ------------------------------------------------------------------
-    # Alerting
-    # ------------------------------------------------------------------
-    def send_alert_email(self, subject: str, message: str):
-        if not Config.ALERT_SMTP_HOST or not Config.ALERT_TO:
-            logger.warning("SMTP not configured, skipping email alert.")
-            return
-        try:
-            msg = MIMEMultipart()
-            msg['From'] = Config.ALERT_FROM or Config.ALERT_SMTP_USER or "alert@example.com"
-            msg['To'] = Config.ALERT_TO
-            if Config.ALERT_CC:
-                msg['Cc'] = Config.ALERT_CC
-            msg['Subject'] = subject
-            msg.attach(MIMEText(message, 'plain'))
-            
-            server = smtplib.SMTP(Config.ALERT_SMTP_HOST, int(Config.ALERT_SMTP_PORT))
-            server.starttls()
-            if Config.ALERT_SMTP_USER and Config.ALERT_SMTP_PASS:
-                server.login(Config.ALERT_SMTP_USER, Config.ALERT_SMTP_PASS)
-            
-            server.send_message(msg)
-            server.quit()
-            logger.info("Alert email sent successfully.")
-        except Exception as e:
-            logger.error(f"Failed to send alert email: {e}")
-
     # ------------------------------------------------------------------
     # API
+    # ------------------------------------------------------------------
     # ------------------------------------------------------------------
     def fetch_data(self, path: str, retries: int = 3) -> Optional[Dict[str, Any]]:
         url = f"{self.base_url}{path}"
@@ -235,7 +210,6 @@ class OneCExtractor:
                 logger.warning(f"{last_error} for {url}")
                 if response.status_code == 401:
                     logger.error("Authentication failed. Check credentials.")
-                    self.send_alert_email("1C API Auth Failed", f"URL: {url}\nError: {last_error}")
                     return None
             except Exception as e:
                 last_error = str(e)
@@ -244,7 +218,6 @@ class OneCExtractor:
             if attempt < retries:
                 time.sleep(2 ** attempt)
         
-        self.send_alert_email("1C API Fetch Failed", f"Failed to fetch {url} after {retries} attempts.\nLast Error: {last_error}")
         return None
 
     # ------------------------------------------------------------------
@@ -415,7 +388,6 @@ class OneCExtractor:
                     success, action_type = self.save_to_db(ep, data, d)
                     if not success:
                         ep_errors.append(f"DB Save Failed @ {d}")
-                        self.send_alert_email("1C API DB Save Failed", f"Failed to save {ep} for date {d} to database.")
                     else:
                         if action_type == "INSERTED": ep_inserted += 1
                         elif action_type == "UPDATED": ep_updated += 1
