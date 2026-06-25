@@ -317,15 +317,15 @@ if [[ $? -ne 0 ]]; then
 fi
 
 # Run dbt; capture both stdout (to log file) and stderr (for alert parsing)
-STEP5_STDERR_FILE="../../$TMPDIR_ETL/step5_dbt.err"
-"$DBT_BIN" run 2>"$STEP5_STDERR_FILE" | tee -a "../../$LOG_FILE"
+STEP5_STDERR_FILE="$TMPDIR_ETL/step5_dbt.err"
+"$DBT_BIN" run 2>"$STEP5_STDERR_FILE" | tee -a "$LOG_FILE"
 STEP5_EXIT=${PIPESTATUS[0]}
 
 if [[ $STEP5_EXIT -ne 0 ]]; then
     log "Step 5 failed. Retrying in 10 seconds..."
     sleep 10
     > "$STEP5_STDERR_FILE"
-    "$DBT_BIN" run 2>"$STEP5_STDERR_FILE" | tee -a "../../$LOG_FILE"
+    "$DBT_BIN" run 2>"$STEP5_STDERR_FILE" | tee -a "$LOG_FILE"
     STEP5_EXIT=${PIPESTATUS[0]}
 fi
 
