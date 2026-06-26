@@ -1,0 +1,1076 @@
+version: 2
+
+models:
+
+  # ─────────────────────────────────────────────────────────────
+  # AGENCY / COMMISSION MARTS
+  # ─────────────────────────────────────────────────────────────
+
+  - name: mart_agency_commissions_monthly
+    description: >
+      Dashboard 9 – Monthly aggregated agency commission volumes.
+      Includes monthly, quarterly, and yearly snapshot helpers for Power BI.
+    columns:
+      - name: report_month
+        description: "First day of the reporting month."
+        tests:
+          - not_null
+          - unique
+      - name: scenario
+        description: "Data scenario."
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Actual']
+      - name: total_commission_volume_uzs
+        description: "Total commissions paid in UZS for the month."
+        tests:
+          - not_null
+      - name: legal_entity_commission_volume_uzs
+        description: "Commissions paid to legal entities (fizyur = 1)."
+        tests:
+          - not_null
+      - name: individual_commission_volume_uzs
+        description: "Commissions paid to individual persons (fizyur = 2)."
+        tests:
+          - not_null
+      - name: legal_entity_commissions_pct
+        description: "Legal entity commissions as % of total."
+        tests:
+          - not_null
+      - name: individual_commission_volume_pct
+        description: "Individual commissions as % of total."
+        tests:
+          - not_null
+
+  # ─────────────────────────────────────────────────────────────
+  # BANK PARTNER PERFORMANCE
+  # ─────────────────────────────────────────────────────────────
+
+  - name: mart_bank_partner_performance_monthly
+    description: >
+      Dashboard 9 – Monthly performance indicators for bank partners.
+      Grain: report_month × bank_partner_name × customer_segment × insurance_type
+             × product_category × product_name × sales_channel × agent_type × agent.
+    columns:
+      - name: report_month
+        description: "First day of the reporting month."
+        tests:
+          - not_null
+      - name: bank_partner_name
+        description: "Standardized bank partner name."
+        tests:
+          - not_null
+      - name: customer_segment
+        description: "Physical or Juridical."
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Physical', 'Juridical']
+      - name: insurance_type
+        description: "Mandatory or Voluntary."
+        tests:
+          - not_null
+      - name: product_category
+        description: "Product priority area."
+        tests:
+          - not_null
+      - name: scenario
+        description: "Data scenario."
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Actual']
+      - name: insurance_premium_volume_uzs
+        description: "Premium volume in UZS."
+        tests:
+          - not_null
+      - name: agency_commission_volume_uzs
+        description: "Commission volume in UZS."
+        tests:
+          - not_null
+      - name: insurance_claims_volume_uzs
+        description: "Claims volume in UZS."
+        tests:
+          - not_null
+      - name: insurance_profit_volume_uzs
+        description: "Profit = Premium – Commission – Claims."
+        tests:
+          - not_null
+      - name: recovery_from_bank_uzs
+        description: "Subrogation recovery amount from banks in UZS."
+        tests:
+          - not_null
+
+  # ─────────────────────────────────────────────────────────────
+  # PARTNER PERFORMANCE DETAIL
+  # ─────────────────────────────────────────────────────────────
+
+  - name: mart_partner_performance_detail
+    description: >
+      Flat detail table for partner performance dashboard charts.
+      Grain: report_month × user_id × channels × insurance_type × product_category × product_name.
+    columns:
+      - name: report_month
+        description: "First day of the reporting month."
+        tests:
+          - not_null
+      - name: report_year
+        description: "Year extracted from report_month."
+        tests:
+          - not_null
+      - name: report_quarter
+        description: "Quarter (1–4) extracted from report_month."
+        tests:
+          - not_null
+          - accepted_values:
+              values: [1, 2, 3, 4]
+      - name: channels
+        description: "Detailed sales channel label."
+        tests:
+          - not_null
+      - name: insurance_type
+        description: "Insurance type."
+        tests:
+          - not_null
+      - name: product_category
+        description: "Product category."
+        tests:
+          - not_null
+      - name: product_name
+        description: "Product name."
+        tests:
+          - not_null
+      - name: premium_cy
+        description: "Current-year premium in UZS."
+        tests:
+          - not_null
+      - name: commission_cy
+        description: "Current-year commission in UZS."
+        tests:
+          - not_null
+      - name: claims_uzs
+        description: "Claims paid in UZS."
+        tests:
+          - not_null
+      - name: net_profit_uzs
+        description: "Net profit after all deductions."
+        tests:
+          - not_null
+      - name: loss_ratio_pct
+        description: "Loss ratio percentage. Must be >= 0."
+        tests:
+          - not_null
+      - name: profitability_pct
+        description: "Profitability percentage."
+        tests:
+          - not_null
+      - name: scenario
+        description: "Data scenario."
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Actual']
+
+  # ─────────────────────────────────────────────────────────────
+  # PARTNER PROFITABILITY
+  # ─────────────────────────────────────────────────────────────
+
+  - name: mart_partner_profitability
+    description: >
+      Monthly profitability view for external/partner channels only
+      (excludes In-House and Website channels).
+    columns:
+      - name: report_month
+        description: "First day of the reporting month."
+        tests:
+          - not_null
+      - name: report_year
+        description: "Year."
+        tests:
+          - not_null
+      - name: report_quarter
+        description: "Quarter (1–4)."
+        tests:
+          - not_null
+          - accepted_values:
+              values: [1, 2, 3, 4]
+      - name: channels
+        description: "Sales channel label."
+        tests:
+          - not_null
+      - name: premium_uzs
+        description: "Gross premium in UZS."
+        tests:
+          - not_null
+      - name: commission_uzs
+        description: "Commission paid in UZS."
+        tests:
+          - not_null
+      - name: claims_uzs
+        description: "Claims paid in UZS."
+        tests:
+          - not_null
+      - name: net_profit_uzs
+        description: "Net profit after deductions."
+        tests:
+          - not_null
+      - name: profitability_pct
+        description: "Profitability percentage."
+        tests:
+          - not_null
+      - name: scenario
+        description: "Data scenario."
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Actual']
+
+  # ─────────────────────────────────────────────────────────────
+  # OWN SALES
+  # ─────────────────────────────────────────────────────────────
+
+  - name: mart_own_sales
+    description: >
+      Dashboard – Own Sales. Combines In-House + Website channels from
+      curated_partner_indicators and Call Center from curated_call_center_indicators.
+    columns:
+      - name: report_month
+        description: "First day of the reporting month."
+        tests:
+          - not_null
+      - name: report_year
+        description: "Year."
+        tests:
+          - not_null
+      - name: report_quarter
+        description: "Quarter (1–4)."
+        tests:
+          - not_null
+          - accepted_values:
+              values: [1, 2, 3, 4]
+      - name: channels
+        description: "Sales channel (In-House or Call Center variants)."
+        tests:
+          - not_null
+      - name: insurance_type
+        description: "Insurance type."
+        tests:
+          - not_null
+      - name: product_category
+        description: "Product category."
+        tests:
+          - not_null
+      - name: premium_uzs
+        description: "Premium volume in UZS."
+        tests:
+          - not_null
+      - name: net_profit_uzs
+        description: "Net profit after all deductions."
+        tests:
+          - not_null
+      - name: profitability_pct
+        description: "Profitability %."
+        tests:
+          - not_null
+      - name: scenario
+        description: "Data scenario."
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Actual']
+
+  # ─────────────────────────────────────────────────────────────
+  # CLAIMS SETTLEMENT
+  # ─────────────────────────────────────────────────────────────
+
+  - name: mart_claim_settlement_indicators
+    description: >
+      Dashboard 15 – Monthly claim settlement speed indicators.
+      Grain: report_month × insurance_type × product_category × product_name.
+    columns:
+      - name: report_year
+        description: "Year."
+        tests:
+          - not_null
+      - name: report_quarter
+        description: "Quarter (1–4)."
+        tests:
+          - not_null
+          - accepted_values:
+              values: [1, 2, 3, 4]
+      - name: report_month
+        description: "First day of the reporting month."
+        tests:
+          - not_null
+      - name: insurance_type
+        description: "Mandatory or Voluntary."
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Mandatory', 'Voluntary']
+      - name: product_category
+        description: "Product vertical category."
+        tests:
+          - not_null
+      - name: product_name
+        description: "Product name."
+        tests:
+          - not_null
+      - name: avg_settlement_days
+        description: "Average days to settle a claim. Must be >= 0."
+        tests:
+          - not_null
+      - name: min_settlement_days
+        description: "Minimum settlement days in the period."
+        tests:
+          - not_null
+      - name: max_settlement_days
+        description: "Maximum settlement days in the period."
+        tests:
+          - not_null
+      - name: total_claims_settled
+        description: "Count of claims settled in the period."
+        tests:
+          - not_null
+      - name: scenario
+        description: "Data scenario."
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Actual']
+
+  # ─────────────────────────────────────────────────────────────
+  # CUSTOMER BASE
+  # ─────────────────────────────────────────────────────────────
+
+  - name: mart_customer_base_summary
+    description: >
+      Dashboard 16 – Monthly customer base summary with retention metrics and NPS index.
+      Grain: report_month × legal_form × customer_segment × oked_industry_code × region_code.
+    columns:
+      - name: report_month
+        description: "First day of the reporting month."
+        tests:
+          - not_null
+      - name: report_year
+        description: "Year."
+        tests:
+          - not_null
+      - name: report_quarter
+        description: "Quarter."
+        tests:
+          - not_null
+      - name: legal_form
+        description: "Physical or Juridical."
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Physical', 'Juridical', 'Unknown']
+      - name: customer_segment
+        description: "Retail or Corporate."
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Retail', 'Corporate', 'Unknown']
+      - name: scenario
+        description: "Scenario."
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Actual']
+      - name: active_customers
+        description: "Number of active customers in the month."
+        tests:
+          - not_null
+      - name: retention_rate_pct
+        description: "Monthly retention rate percentage."
+        tests:
+          - not_null
+      - name: nps_index
+        description: "NPS score for the month (% Promoters - % Detractors)."
+        tests:
+          - not_null
+
+  - name: mart_customer_retention_spine
+    description: >
+      Intermediate monthly spine for customer retention calculations.
+      One row per customer × month combination, with activity flags.
+    columns:
+      - name: report_month
+        description: "First day of the reporting month."
+        tests:
+          - not_null
+      - name: customer_id
+        description: "Customer identifier."
+        tests:
+          - not_null
+
+  - name: mart_customer_experience_monthly
+    description: >
+      Dashboard 20 – Individual NPS responses with monthly NPS index.
+      Grain: one row per survey response for 'General NPS' type.
+    columns:
+      - name: report_month
+        description: "First day of the month of the response."
+        tests:
+          - not_null
+      - name: nps_score_raw
+        description: "Raw NPS score submitted."
+        tests:
+          - not_null
+      - name: nps_category
+        description: "Promoter, Passive, or Detractor."
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Promoter', 'Passive', 'Detractor']
+      - name: total_responses
+        description: "Total responses in the same month."
+        tests:
+          - not_null
+      - name: customer_nps_index
+        description: "NPS index for the month."
+        tests:
+          - not_null
+
+  # ─────────────────────────────────────────────────────────────
+  # NPS & CSI
+  # ─────────────────────────────────────────────────────────────
+
+  - name: mart_nps_customer_satisfaction
+    description: >
+      Dashboard 18 – Monthly NPS and CSI (Customer Satisfaction Index) by survey type.
+      Grain: report_month × survey_type.
+    columns:
+      - name: report_month
+        description: "First day of the reporting month."
+        tests:
+          - not_null
+      - name: report_year
+        description: "Year."
+        tests:
+          - not_null
+      - name: report_quarter
+        description: "Quarter (1–4)."
+        tests:
+          - not_null
+          - accepted_values:
+              values: [1, 2, 3, 4]
+      - name: survey_type
+        description: "Type of survey (e.g. General NPS)."
+        tests:
+          - not_null
+      - name: scenario
+        description: "Scenario."
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Actual']
+      - name: total_responses
+        description: "Total survey responses in the period."
+        tests:
+          - not_null
+      - name: nps_index
+        description: "NPS score (% Promoters - % Detractors)."
+        tests:
+          - not_null
+      - name: csi_index
+        description: "Customer Satisfaction Index (average raw score)."
+        tests:
+          - not_null
+
+  # ─────────────────────────────────────────────────────────────
+  # FINANCIAL PERFORMANCE
+  # ─────────────────────────────────────────────────────────────
+
+  - name: mart_financial_ratios_monthly
+    description: >
+      Core financial KPI ratios: loss ratio, expense ratio, combined ratio,
+      and reinsurance level. Used as a dependency by mart_insurance_operations_monthly.
+    columns:
+      - name: report_month
+        description: "First day of the reporting month."
+        tests:
+          - not_null
+      - name: scenario
+        description: "Scenario."
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Actual']
+      - name: loss_ratio_pct
+        description: "Loss Ratio % = (Claims + RBNS) / Net Earned Premium."
+        tests:
+          - not_null
+      - name: expense_ratio_pct
+        description: "Expense Ratio %."
+        tests:
+          - not_null
+      - name: combined_ratio_pct
+        description: "Combined Ratio % = Loss + Expense Ratio."
+        tests:
+          - not_null
+      - name: reinsurance_level_pct
+        description: "Reinsurance cession level %."
+        tests:
+          - not_null
+      - name: claims_payout
+        description: "Total claims payout for the period."
+        tests:
+          - not_null
+      - name: premium_written
+        description: "Total gross premium written."
+        tests:
+          - not_null
+      - name: denominator_net_earned_premium
+        description: "Net earned premium used as denominator in ratios."
+        tests:
+          - not_null
+
+  - name: mart_financial_stability_monthly
+    description: >
+      Monthly financial stability KPIs including cash-to-claims ratio
+      and solvency margin adequacy ratio (last value carried forward monthly).
+    columns:
+      - name: report_month
+        description: "First day of the reporting month."
+        tests:
+          - not_null
+      - name: scenario
+        description: "Scenario."
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Actual']
+      - name: cash_and_equivalents_a410
+        description: "Cash and equivalents balance (Balance Sheet A410)."
+        tests:
+          - not_null
+      - name: total_claims_incurred
+        description: "Total claims incurred in the period."
+        tests:
+          - not_null
+      - name: cash_to_claims_ratio_actual
+        description: "Actual cash-to-claims ratio %."
+        tests:
+          - not_null
+      - name: cash_to_claims_ratio_required
+        description: "Required cash-to-claims ratio (static 2.5)."
+        tests:
+          - not_null
+      - name: solvency_margin_adequacy_ratio_actual
+        description: "Actual solvency margin adequacy ratio."
+        tests:
+          - not_null
+      - name: solvency_margin_adequacy_ratio_required
+        description: "Required solvency margin adequacy ratio."
+        tests:
+          - not_null
+
+  - name: mart_operational_efficiency_monthly
+    description: >
+      Monthly Cost-Income Ratio (CIR) calculation.
+      CIR = Operating Expenses (F090) / Operating Income (F060 + F140).
+    columns:
+      - name: report_month
+        description: "First day of the reporting month."
+        tests:
+          - not_null
+      - name: scenario
+        description: "Scenario."
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Actual']
+      - name: operating_expenses_sum
+        description: "Total operating expenses (F090) in UZS."
+        tests:
+          - not_null
+      - name: operating_income_sum
+        description: "Financial income (F140) used as denominator."
+        tests:
+          - not_null
+      - name: cir_pct
+        description: "Cost-Income Ratio percentage."
+        tests:
+          - not_null
+      - name: total_expenses_f090
+        description: "Operating expenses F090 (drill-down)."
+        tests:
+          - not_null
+      - name: total_revenue_f060
+        description: "Operating income F060 (drill-down)."
+        tests:
+          - not_null
+      - name: financial_income_f140
+        description: "Financial income F140 (drill-down)."
+        tests:
+          - not_null
+
+  - name: fact_financial_kpi
+    description: "Simple passthrough of financial performance curated data."
+    columns:
+      - name: report_date
+        description: "Reporting date."
+        tests:
+          - not_null
+
+  # ─────────────────────────────────────────────────────────────
+  # INSURANCE OPERATIONS
+  # ─────────────────────────────────────────────────────────────
+
+  - name: mart_insurance_operations_monthly
+    description: >
+      Monthly summary of core insurance operations: premium, claims, loss ratio,
+      liabilities, and terminated contracts.
+    columns:
+      - name: report_month
+        description: "First day of the reporting month."
+        tests:
+          - not_null
+      - name: scenario
+        description: "Scenario."
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Actual']
+      - name: insurance_premium_volume_uzs
+        description: "Gross premium volume in UZS."
+        tests:
+          - not_null
+      - name: insurance_claims_volume_uzs
+        description: "Claims volume in UZS."
+        tests:
+          - not_null
+      - name: loss_ratio_pct
+        description: "Loss ratio percentage."
+        tests:
+          - not_null
+      - name: insurance_liabilities_volume_uzs
+        description: "Insured liabilities volume in UZS."
+        tests:
+          - not_null
+      - name: terminated_contracts_volume_uzs
+        description: "Terminated contracts volume in UZS."
+        tests:
+          - not_null
+
+  - name: mart_insurance_volume_indicators
+    description: >
+      Dashboard 7 – Insurance volume indicators with current-year vs prior-year comparison.
+      Grain: report_month × insurance_type × category × product_name × sales_channel × partner_type × partner_name.
+    columns:
+      - name: report_month
+        description: "First day of the reporting month."
+        tests:
+          - not_null
+      - name: report_year
+        description: "Year."
+        tests:
+          - not_null
+      - name: insurance_type
+        description: "Insurance type."
+        tests:
+          - not_null
+      - name: category
+        description: "Product vertical category."
+        tests:
+          - not_null
+      - name: product_name
+        description: "Product name."
+        tests:
+          - not_null
+      - name: sales_channel
+        description: "Sales channel."
+        tests:
+          - not_null
+      - name: co_premium_volume_cy
+        description: "Current-year premium volume in UZS."
+        tests:
+          - not_null
+      - name: co_premium_volume_py
+        description: "Prior-year premium volume in UZS."
+        tests:
+          - not_null
+      - name: co_claims_volume_cy
+        description: "Current-year claims volume in UZS."
+        tests:
+          - not_null
+      - name: co_claims_volume_py
+        description: "Prior-year claims volume in UZS."
+        tests:
+          - not_null
+
+  # ─────────────────────────────────────────────────────────────
+  # INSURANCE RESERVES
+  # ─────────────────────────────────────────────────────────────
+
+  - name: mart_insurance_reserves_monthly
+    description: >
+      Monthly insurance reserve balances (UPR, IBNR, RBNS, Stabilization Reserve)
+      with quarterly and yearly snapshot helpers.
+    columns:
+      - name: report_month
+        description: "First day of the reporting month."
+        tests:
+          - not_null
+      - name: scenario
+        description: "Scenario."
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Actual']
+      - name: upr
+        description: "Unearned Premium Reserve (P590) in UZS."
+        tests:
+          - not_null
+      - name: ibnr
+        description: "Incurred But Not Reported reserve in UZS."
+        tests:
+          - not_null
+      - name: rbns
+        description: "Reported But Not Settled reserve in UZS."
+        tests:
+          - not_null
+      - name: stabilization_reserve
+        description: "Stabilization reserve (P630 + P650)."
+        tests:
+          - not_null
+      - name: allocated_assets_to_reserves_pct
+        description: "Allocated assets to reserves ratio %."
+        tests:
+          - not_null
+
+  # ─────────────────────────────────────────────────────────────
+  # REINSURANCE
+  # ─────────────────────────────────────────────────────────────
+
+  - name: mart_reinsurance_monthly
+    description: >
+      Monthly reinsurance summary with incoming and outgoing volumes
+      and reinsurance level percentage.
+    columns:
+      - name: report_month
+        description: "First day of the reporting month."
+        tests:
+          - not_null
+          - unique
+      - name: scenario
+        description: "Scenario."
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Actual']
+      - name: incoming_reinsurance_volume_uzs
+        description: "Incoming reinsurance premium volume in UZS."
+        tests:
+          - not_null
+      - name: outgoing_reinsurance_volume_uzs
+        description: "Outgoing (ceded) reinsurance premium volume in UZS."
+        tests:
+          - not_null
+      - name: reinsurance_level_pct
+        description: "Reinsurance cession level as % of gross premium."
+        tests:
+          - not_null
+
+  - name: mart_reinsurance_indicators
+    description: >
+      Reinsurance KPIs with current-year vs prior-year comparison for both
+      outgoing (ceded) and incoming (assumed) volumes.
+      Grain: report_month × insurance_type × category × product × reinsurer.
+    columns:
+      - name: report_month
+        description: "First day of the reporting month."
+        tests:
+          - not_null
+      - name: insurance_type
+        description: "Insurance type."
+        tests:
+          - not_null
+      - name: category
+        description: "Product category."
+        tests:
+          - not_null
+      - name: product
+        description: "Product name."
+        tests:
+          - not_null
+      - name: reinsurer
+        description: "Reinsurer or cedant name."
+        tests:
+          - not_null
+      - name: outgoing_volume_cy
+        description: "Current-year outgoing (ceded) volume in UZS."
+        tests:
+          - not_null
+      - name: outgoing_volume_py
+        description: "Prior-year outgoing volume in UZS."
+        tests:
+          - not_null
+      - name: incoming_volume_cy
+        description: "Current-year incoming (assumed) volume in UZS."
+        tests:
+          - not_null
+      - name: incoming_volume_py
+        description: "Prior-year incoming volume in UZS."
+        tests:
+          - not_null
+
+  - name: mart_reinsurance_indicators_reinsurer
+    description: "Reinsurance KPIs broken down by individual reinsurer."
+    columns:
+      - name: reinsurer
+        description: "Reinsurer name."
+        tests:
+          - not_null
+      - name: outgoing_volume_2024_bn_uzs
+        description: "Outgoing (ceded) volume in Billion UZS for 2024."
+        tests:
+          - not_null
+      - name: outgoing_volume_2025_bn_uzs
+        description: "Outgoing (ceded) volume in Billion UZS for 2025."
+        tests:
+          - not_null
+      - name: incoming_volume_2024_bn_uzs
+        description: "Incoming (assumed) volume in Billion UZS for 2024."
+        tests:
+          - not_null
+      - name: incoming_volume_2025_bn_uzs
+        description: "Incoming (assumed) volume in Billion UZS for 2025."
+        tests:
+          - not_null
+
+  # ─────────────────────────────────────────────────────────────
+  # SUBROGATION
+  # ─────────────────────────────────────────────────────────────
+
+  - name: mart_subrogation_indicators_monthly
+    description: >
+      Monthly subrogation recovery volumes (total, exact, undefined).
+    columns:
+      - name: report_month
+        description: "First day of the reporting month."
+        tests:
+          - not_null
+          - unique
+      - name: scenario
+        description: "Scenario."
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Actual']
+      - name: total_subrogation_volume_uzs
+        description: "Total subrogation recovery volume in UZS."
+        tests:
+          - not_null
+      - name: exact_subrogation_volume_uzs
+        description: "Verified/linked subrogation recovery in UZS."
+        tests:
+          - not_null
+      - name: undefined_subrogation_volume_uzs
+        description: "Unlinked subrogation recovery in UZS."
+        tests:
+          - not_null
+
+  - name: mart_subrogation_bank_summary
+    description: >
+      Detailed subrogation summary broken down by bank partner,
+      with claim and recovery KPIs.
+    columns:
+      - name: report_month
+        description: "First day of the reporting month."
+        tests:
+          - not_null
+      - name: bank_name
+        description: "Bank partner name."
+        tests:
+          - not_null
+
+  # ─────────────────────────────────────────────────────────────
+  # POLICY RENEWALS
+  # ─────────────────────────────────────────────────────────────
+
+  - name: mart_policy_renewal_indicators
+    description: >
+      Dashboard 15 – One row per expiring policy, with renewal flag.
+      Designed for Power BI DISTINCTCOUNT of client_id.
+    columns:
+      - name: report_month
+        description: "Month of policy expiration."
+        tests:
+          - not_null
+      - name: report_year
+        description: "Year."
+        tests:
+          - not_null
+      - name: report_quarter
+        description: "Quarter (1–4)."
+        tests:
+          - not_null
+          - accepted_values:
+              values: [1, 2, 3, 4]
+      - name: insurance_type
+        description: "Mandatory or Voluntary."
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Mandatory', 'Voluntary']
+      - name: product_category
+        description: "Product category."
+        tests:
+          - not_null
+      - name: product_name
+        description: "Product name."
+        tests:
+          - not_null
+      - name: client_id
+        description: "Client identifier for DISTINCTCOUNT."
+        tests:
+          - not_null
+      - name: expired_clients
+        description: "Always 1 (row-level flag for counting)."
+        tests:
+          - not_null
+          - accepted_values:
+              values: [1]
+      - name: renewed_clients
+        description: "1 if renewed, 0 if not."
+        tests:
+          - not_null
+          - accepted_values:
+              values: [0, 1]
+      - name: scenario
+        description: "Scenario."
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Actual']
+
+  # ─────────────────────────────────────────────────────────────
+  # INVESTMENT
+  # ─────────────────────────────────────────────────────────────
+
+  - name: mart_investment_portfolio_monthly
+    description: >
+      Monthly investment portfolio breakdown by category (Deposits, Shares, Bonds, Other/Loans)
+      with volume and income metrics. Uses end-of-month dates.
+    columns:
+      - name: report_month
+        description: "Last day of the reporting month."
+        tests:
+          - not_null
+      - name: portfolio_category
+        description: "Investment category."
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Deposits', 'Shares', 'Bonds', 'Other']
+      - name: total_investment_portfolio_volume_uzs
+        description: "Total investment portfolio volume across all categories."
+        tests:
+          - not_null
+      - name: total_investment_category_amount_uzs
+        description: "Investment volume for this specific category."
+        tests:
+          - not_null
+      - name: total_investment_category_pct
+        description: "Category share of total portfolio %."
+        tests:
+          - not_null
+      - name: total_investment_income_portfolio_volume_uzs
+        description: "Total investment income across all categories."
+        tests:
+          - not_null
+      - name: total_investment_income_category_amount_uzs
+        description: "Investment income for this specific category."
+        tests:
+          - not_null
+
+  - name: mart_investment_partner_indicators_monthly
+    description: "Monthly investment partner-level indicators."
+    columns:
+      - name: report_month
+        description: "Reporting month."
+        tests:
+          - not_null
+
+  # ─────────────────────────────────────────────────────────────
+  # LTV / CAC
+  # ─────────────────────────────────────────────────────────────
+
+  - name: mart_ltv_cac_monthly_summary
+    description: >
+      Monthly LTV (Lifetime Value) and CAC (Customer Acquisition Cost) summary metrics.
+    columns:
+      - name: report_month
+        description: "First day of the reporting month."
+        tests:
+          - not_null
+      - name: scenario
+        description: "Scenario."
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Actual']
+
+  # ─────────────────────────────────────────────────────────────
+  # HR
+  # ─────────────────────────────────────────────────────────────
+
+  - name: mart_hr_employee_analytics
+    description: "Monthly HR employee analytics including headcount and attrition."
+    columns:
+      - name: report_month
+        description: "Reporting month."
+        tests:
+          - not_null
+      - name: scenario
+        description: "Scenario."
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Actual']
+
+  # ─────────────────────────────────────────────────────────────
+  # COMMERCIAL DEVELOPMENT
+  # ─────────────────────────────────────────────────────────────
+
+  - name: mart_commercial_development_priority_areas_base
+    description: "Base mart for commercial development priority area analysis."
+    columns:
+      - name: report_month
+        description: "Reporting month."
+        tests:
+          - not_null
+
+  - name: mart_commercial_development_priority_areas_pivoted
+    description: "Pivoted version of commercial development priority areas for dashboard."
+    columns:
+      - name: report_month
+        description: "Reporting month."
+        tests:
+          - not_null
+
+  - name: mart_commercial_development_priority_areas_summary
+    description: "Summary aggregation of commercial development priority areas."
+    columns:
+      - name: report_month
+        description: "Reporting month."
+        tests:
+          - not_null
+
+  - name: mart_commercial_market_share_yearly
+    description: "Yearly market share analysis across insurance lines."
+    columns:
+      - name: report_year
+        description: "Reporting year."
+        tests:
+          - not_null
+      - name: scenario
+        description: "Scenario."
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Actual']
