@@ -1,4 +1,11 @@
-{{ config(materialized='table') }}
+{{config(
+    materialized = 'table',
+    post_hook    = [
+      "CREATE INDEX IF NOT EXISTS idx_mppd_month      ON {{ this }} (report_month)",
+      "CREATE INDEX IF NOT EXISTS idx_mppd_partner    ON {{ this }} (partner_id)",
+      "CREATE INDEX IF NOT EXISTS idx_mppd_channels   ON {{ this }} (channels)"
+    ]
+)}}
 
 /*
   mart_partner_performance_detail

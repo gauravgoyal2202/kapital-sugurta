@@ -1,0 +1,77 @@
+version: 2
+
+models:
+  - name: stg_exchange_rates
+    description: >
+      Unpivots the wide ins_kurs_oracle table into a normalised
+      (kurs_date, currency_id, rate) lookup table.
+
+      Replaces the row-by-row UDF call raw.F_INS_GETKURS(opl_val, pym_date)
+      with a standard LEFT JOIN.
+
+      Currency IDs 1-26 match the original UDF CASE statement exactly:
+        1=UZS(always 1), 2=USD, 3=EUR, 4=RUB, 5=AED, 6=AUD, 7=CAD, 8=CHF,
+        9=CNY, 10=DKK, 11=EGP, 12=GBP, 13=ISK, 14=JPY, 15=KRW, 16=KWD,
+        17=LBP, 18=MYR, 19=NOK, 20=PLN, 21=SEK, 22=SGD, 23=TRY, 24=UAH,
+        25=INR(NULL, same as UDF), 26=KZT
+    columns:
+      - name: kurs_date
+        description: Exchange rate date (date, not timestamp).
+        tests:
+          - not_null
+      - name: currency_id
+        description: Currency code integer matching ins_oplata_oracle.opl_val.
+        tests:
+          - not_null
+      - name: rate
+        description: UZS per 1 unit of foreign currency. NULL for unsupported currencies (ID=25).
+
+  - name: stg_valid_policies
+    description: >
+      Pre-materialised set of anketa_ids whose associated policy is in a
+      valid status (2=active, 9=extended, 10=renewed).
+
+      Replaces the expensive repeated EXISTS subquery pattern:
+        EXISTS (SELECT 1 FROM ins_polis_oracle p
+                WHERE p.tb_status IN (2,9,10)
+                AND p.tb_anketa = o.anketa_id)
+
+      An index on tb_anketa is created via post_hook so every downstream
+      model that JOINs on anketa_id uses a fast index scan.
+    columns:
+      - name: tb_anketa
+        description: Anketa (application) ID with a valid policy.
+        tests:
+          - not_null
+          - unique
+
+  - name: stg_klass
+    description: >
+      Pre-materialises the raw.f_ins_pturiklass(pid) PL/pgSQL function as a tiny
+      set-based lookup table.
+    columns:
+      - name: polis_id
+        description: Unique policy identifier.
+        tests:
+          - unique
+      - name: klass
+        description: Concatenated list of class IDs.
+
+  - name: stg_fifty
+    description: >
+      Calculates motivation payments (ZP, DOP, and director shares) based on
+      ins_oplata_oracle and ins_fifty_oracle rules.
+    columns:
+      - name: ins_id
+        description: Unique payment row identifier.
+        tests:
+          - not_null
+          - unique
+      - name: fifty_zp
+        description: ZP motivation amount.
+      - name: fifty_dop
+        description: DOP motivation amount.
+      - name: fifty_director
+        description: Director motivation amount.
+      - name: fifty_total
+        description: Total calculated motivation payment.

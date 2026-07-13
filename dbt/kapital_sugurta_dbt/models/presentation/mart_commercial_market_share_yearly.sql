@@ -1,4 +1,10 @@
-{{ config(materialized='table') }}
+{{config(
+    materialized = 'table',
+    post_hook    = [
+      "CREATE INDEX IF NOT EXISTS idx_mcmsy_year     ON {{ this }} (report_year)",
+      "CREATE INDEX IF NOT EXISTS idx_mcmsy_area     ON {{ this }} (priority_area)"
+    ]
+)}}
 
 /*
   Dashboard 11 — Commercial Development: Market Share (YEARLY)
@@ -10,34 +16,44 @@
 
   Company side  → raw.ins_oplata_oracle and others directly
   Market side   → raw.market_share_insurance_class_stats (total_premium)
+
+  PERFORMANCE: raw.f_ins_getkurs() and raw.f_ins_pturiklass() UDF calls
+  replaced with set-based JOINs on staging models and a klass CTE.
+  EXISTS subqueries replaced with JOIN on stg_valid_policies
 */
 
--- ────────────────────────────────────────────────────────────────────────────
+-- ──────────────────────────────────────────────────────────────────────────────
 -- 1. Company yearly premium (Motor + Property only)
--- ────────────────────────────────────────────────────────────────────────────
-WITH detailed_data AS (
+-- ──────────────────────────────────────────────────────────────────────────────
+
+-- 0a. Klass lookup per ins_type — replaces raw.f_ins_pturiklass() UDF
+With detailed_data AS (
 
     /* =========================
        1) GENERAL INSURANCE
        ========================= */
     SELECT
-        bc.pym_date AS pay_date,
-        raw.f_ins_pturiklass(o.ins_type) AS klass,
+        bc.pym_date                           AS pay_date,
+        -- replaces: raw.f_ins_pturiklass(o.ins_type) UDF → set-based JOIN on stg_klass (~320 rows)
+        k.klass                               AS klass,
         CASE
             WHEN o.opl_val = 1 THEN COALESCE(o.oplata, 0)
-            ELSE COALESCE(o.opl_summa, 0)
-                 * raw.f_ins_getkurs(o.opl_val, bc.pym_date)
-        END AS oplsum
+            ELSE COALESCE(o.opl_summa, 0) * COALESCE(exr.rate, 1)
+        END                                   AS oplsum
     FROM {{ source('raw', 'ins_oplata_oracle') }} o
-    LEFT JOIN {{ source('raw', 'ins_bank_client_oracle') }} bc
+    -- replaces EXISTS subquery — indexed join on stg_valid_policies
+    JOIN {{ ref('stg_valid_policies') }} vp
+        ON vp.tb_anketa = o.anketa_id
+    JOIN {{ source('raw', 'ins_bank_client_oracle') }} bc
         ON o.bc_id = bc.ins_id
+    -- replaces raw.f_ins_getkurs() UDF
+    LEFT JOIN {{ ref('stg_exchange_rates') }} exr
+        ON  exr.kurs_date   = bc.pym_date::date
+        AND exr.currency_id = o.opl_val
+    -- replaces raw.f_ins_pturiklass(o.ins_type) UDF
+    LEFT JOIN {{ ref('stg_klass') }} k
+        ON k.polis_id = o.ins_type
     WHERE o.ins_type <> 3
-      AND EXISTS (
-            SELECT 1
-            FROM {{ source('raw', 'ins_polis_oracle') }} p
-            WHERE p.tb_status IN (2, 9, 10)
-              AND p.tb_anketa = o.anketa_id
-      )
       AND bc.pym_date >= DATE '2021-01-01'
 
     UNION ALL
@@ -46,24 +62,26 @@ WITH detailed_data AS (
        2) OSAGO NEW TABLE
        ========================= */
     SELECT
-        bc.pym_date AS pay_date,
-        raw.f_ins_pturiklass(o.ins_type) AS klass,
+        bc.pym_date                           AS pay_date,
+        -- replaces: raw.f_ins_pturiklass(o.ins_type) UDF → set-based JOIN on stg_klass
+        k.klass                               AS klass,
         CASE
             WHEN o.opl_val = 1 THEN COALESCE(o.oplata, 0)
-            ELSE COALESCE(o.opl_summa, 0)
-                 * raw.f_ins_getkurs(o.opl_val, bc.pym_date)
-        END AS oplsum
+            ELSE COALESCE(o.opl_summa, 0) * COALESCE(exr.rate, 1)
+        END                                   AS oplsum
     FROM {{ source('raw', 'ins_oplata_oracle') }} o
-    LEFT JOIN {{ source('raw', 'ins_bank_client_oracle') }} bc
+    JOIN {{ ref('stg_valid_policies') }} vp
+        ON vp.tb_anketa = o.anketa_id
+    JOIN {{ source('raw', 'ins_bank_client_oracle') }} bc
         ON o.bc_id = bc.ins_id
        AND bc.status = 2
+    LEFT JOIN {{ ref('stg_exchange_rates') }} exr
+        ON  exr.kurs_date   = bc.pym_date::date
+        AND exr.currency_id = o.opl_val
+    -- replaces raw.f_ins_pturiklass(o.ins_type) UDF
+    LEFT JOIN {{ ref('stg_klass') }} k
+        ON k.polis_id = o.ins_type
     WHERE o.ins_type = 3
-      AND EXISTS (
-            SELECT 1
-            FROM {{ source('raw', 'ins_polis_oracle') }} p
-            WHERE p.tb_status IN (2, 9, 10)
-              AND p.tb_anketa = o.anketa_id
-      )
       AND bc.pym_date >= DATE '2021-01-01'
 
     UNION ALL
@@ -72,9 +90,10 @@ WITH detailed_data AS (
        3) OSAGO OLD TABLE
        ========================= */
     SELECT
-        bc.pym_date AS pay_date,
-        raw.f_ins_pturiklass(3) AS klass,
-        COALESCE(o.tb_summa, 0) AS oplsum
+        bc.pym_date                           AS pay_date,
+        -- replaces: raw.f_ins_pturiklass(3) — polis_id=3 is a constant for OSAGO
+        (SELECT klass FROM {{ ref('stg_klass') }} WHERE polis_id = 3 LIMIT 1) AS klass,
+        COALESCE(o.tb_summa, 0)              AS oplsum
     FROM {{ source('raw', 'tb_anketa_oracle') }} t
     INNER JOIN {{ source('raw', 'tb_polis_oracle') }} p
         ON t.tb_id = p.tb_anketa

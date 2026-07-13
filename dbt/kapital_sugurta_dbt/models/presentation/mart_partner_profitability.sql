@@ -1,4 +1,10 @@
-{{ config(materialized='table') }}
+{{config(
+    materialized = 'table',
+    post_hook    = [
+      "CREATE INDEX IF NOT EXISTS idx_mpp_month     ON {{ this }} (report_month)",
+      "CREATE INDEX IF NOT EXISTS idx_mpp_channels  ON {{ this }} (channels)"
+    ]
+)}}
 
 /*
   Dashboard — Partner / Channel Profitability

@@ -30,6 +30,10 @@ models:
   kapital_sugurta_dbt:
     +materialized: view   # default (we’ll override below)
 
+    staging:
+      +schema: staging
+      +materialized: table  # staging models are small lookup tables — materialise once, join many times
+
     curated:
       +schema: curated
       +materialized: table

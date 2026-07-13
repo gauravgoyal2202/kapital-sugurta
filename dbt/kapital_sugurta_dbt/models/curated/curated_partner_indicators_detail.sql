@@ -1,4 +1,11 @@
-{{ config(materialized='view') }}
+{{config(
+    materialized = 'table',
+    post_hook    = [
+      "CREATE INDEX IF NOT EXISTS idx_cpid_month     ON {{ this }} (month)",
+      "CREATE INDEX IF NOT EXISTS idx_cpid_user_id   ON {{ this }} (user_id)",
+      "CREATE INDEX IF NOT EXISTS idx_cpid_channels  ON {{ this }} (channels)"
+    ]
+)}}
 
 /*
   curated_partner_indicators_detail
@@ -15,16 +22,9 @@
     curated_partner_indicators_detail → month × user_id × channels × insurance_type × product_category × product_name
 */
 
+WITH -- ──────────────────────────────────────────────
+-- 1. Valid ankets via pre-materialised staging table (replaces inline CTE)
 -- ──────────────────────────────────────────────
--- 1. Only ankets whose policy is in a valid state
--- ──────────────────────────────────────────────
-WITH valid_polis_anketa AS (
-
-    SELECT DISTINCT tb_anketa
-    FROM {{ source('raw', 'ins_polis_oracle') }}
-    WHERE tb_status IN (2, 9, 10)
-
-),
 
 -- ──────────────────────────────────────────────
 -- 2. Claims  (from ins_loss_oracle)
@@ -69,6 +69,7 @@ akt_ch AS (
     GROUP BY ins_id
 
 ),
+
 
 -- ──────────────────────────────────────────────
 -- 5. Main data — new insurance premiums
@@ -136,20 +137,21 @@ main_data AS (
         COALESCE(v_cat.name3, 'Other') AS product_category,
         COALESCE(pt.polis_name, 'Other') AS product_name,
 
-        -- Premium in UZS
+        -- Premium in UZS  (exr.rate replaces LATERAL kurs_value)
         CASE
             WHEN o.opl_val = 1
                 THEN COALESCE(o.oplata, 0)
             ELSE
-                COALESCE(o.opl_summa, 0) * COALESCE(kurs.kurs_value, 0)
+                COALESCE(o.opl_summa, 0) * COALESCE(exr.rate, 0)
         END AS oplsum,
 
         -- Commission in UZS
-        COALESCE(o.kommis_summa, 0) * COALESCE(kurs.kurs_value, 0) AS kom_sum,
+        COALESCE(o.kommis_summa, 0) * COALESCE(exr.rate, 0) AS kom_sum,
 
         COALESCE(cla.claim_value, 0) AS claim_value,
 
-        COALESCE(fpack.fifty_total, 0) AS fifty,
+        -- fifty_total from pre-aggregated CTE (replaces ins_fifty_pack() UDF)
+        COALESCE(fp.fifty_total, 0) AS fifty,
 
         o.anketa_id,
         po.tb_id AS polis_id,
@@ -167,7 +169,7 @@ main_data AS (
         ON  bc.ins_id   = o.bc_id
         AND bc.pym_date >= DATE '2021-01-01'
 
-    JOIN valid_polis_anketa vp
+    JOIN {{ ref('stg_valid_policies') }} vp
         ON vp.tb_anketa = o.anketa_id
 
     LEFT JOIN {{ source('raw', 'ins_anketa_oracle') }} a
@@ -199,56 +201,14 @@ main_data AS (
     LEFT JOIN {{ source('raw', 'ins_vertical_oracle') }} v_cat
         ON v_cat.ins_id = pt.vertical
 
-    LEFT JOIN {{ source('raw', 'ins_kurs_oracle') }} k
-        ON k.kurs_date::date = bc.pym_date::date
+    -- Replaces LATERAL kurs_value CASE block + CROSS JOIN LATERAL ins_fifty_pack() UDF
+    LEFT JOIN {{ ref('stg_exchange_rates') }} exr
+        ON  exr.kurs_date   = bc.pym_date::date
+        AND exr.currency_id = o.opl_val
 
-    CROSS JOIN LATERAL (
-        SELECT CASE o.opl_val
-            WHEN  1 THEN 1
-            WHEN  2 THEN k.kurs_usd
-            WHEN  3 THEN k.kurs_eur
-            WHEN  4 THEN k.kurs_rub
-            WHEN  5 THEN k.kurs_aed
-            WHEN  6 THEN k.kurs_aud
-            WHEN  7 THEN k.kurs_cad
-            WHEN  8 THEN k.kurs_chf
-            WHEN  9 THEN k.kurs_cny
-            WHEN 10 THEN k.kurs_dkk
-            WHEN 11 THEN k.kurs_egp
-            WHEN 12 THEN k.kurs_gbp
-            WHEN 13 THEN k.kurs_isk
-            WHEN 14 THEN k.kurs_jpy
-            WHEN 15 THEN k.kurs_krw
-            WHEN 16 THEN k.kurs_kwd
-            WHEN 17 THEN k.kurs_lbp
-            WHEN 18 THEN k.kurs_myr
-            WHEN 19 THEN k.kurs_nok
-            WHEN 20 THEN k.kurs_pln
-            WHEN 21 THEN k.kurs_sek
-            WHEN 22 THEN k.kurs_sgd
-            WHEN 23 THEN k.kurs_try
-            WHEN 24 THEN k.kurs_uah
-            WHEN 26 THEN k.kurs_kzt
-            ELSE NULL
-        END AS kurs_value
-    ) kurs
-
-    CROSS JOIN LATERAL raw.ins_fifty_pack(
-        a.ins_type,
-        o.anketa_id,
-        CASE
-            WHEN o.opl_val = 1
-                THEN o.oplata
-            ELSE
-                o.opl_summa * o.val_kurs
-        END,
-        o.opl_data
-    ) AS fpack(
-        fifty_zp,
-        fifty_dop,
-        fifty_director,
-        fifty_total
-    )
+    -- Replaces raw.ins_fifty_pack UDF with pre-materialised stg_fifty table
+    LEFT JOIN {{ ref('stg_fifty') }} fp
+        ON fp.ins_id = o.ins_id
 
     WHERE (
         o.ins_type <> 3

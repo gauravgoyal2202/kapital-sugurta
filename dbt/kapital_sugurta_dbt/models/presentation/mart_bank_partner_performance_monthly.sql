@@ -1,4 +1,10 @@
-{{ config(materialized='table') }}
+{{config(
+    materialized = 'table',
+    post_hook    = [
+      "CREATE INDEX IF NOT EXISTS idx_mbppm_month    ON {{ this }} (report_month)",
+      "CREATE INDEX IF NOT EXISTS idx_mbppm_partner  ON {{ this }} (bank_partner_name)"
+    ]
+)}}
 
 /*
   Dashboard 9 — Bottom Section: "Показатели агентских вознаграждений"

@@ -1,4 +1,11 @@
-{{ config(materialized='view') }}
+{{ config(
+    materialized = 'table',
+    post_hook    = [
+        "CREATE INDEX IF NOT EXISTS idx_cur_ins_prem_paydate  ON {{ this }} (payment_date)",
+        "CREATE INDEX IF NOT EXISTS idx_cur_ins_prem_anketa   ON {{ this }} (anketa_id)",
+        "CREATE INDEX IF NOT EXISTS idx_cur_ins_prem_pturi    ON {{ this }} (pturi_id)"
+    ]
+) }}
 
 WITH representative_policies AS (
     -- Identify the "best" policy for each anketa to link to dimensions
