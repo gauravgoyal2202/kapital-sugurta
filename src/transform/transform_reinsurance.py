@@ -39,7 +39,7 @@ log = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # File paths
 # ---------------------------------------------------------------------------
-BASE_DIR = Path(__file__).parent / "excel_drop" / "Reinsurance_Level"
+BASE_DIR = Path(__file__).parent / "data", "raw" / "Reinsurance_Level"
 FILE1_NAME = "Порт 4 кв Исход 2025 уточ.xlsx" # date K amount AM (outgoing)
 FILE2_NAME = "Порт 2021-2025 вход (2).xlsx" # date K amount AA (incoming)
 FILE1_PATH = BASE_DIR / FILE1_NAME

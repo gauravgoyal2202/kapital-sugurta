@@ -1,11 +1,1 @@
 version: 2
-
-sources:
-  - name: raw
-    schema: raw
-    tables:
-      - name: orders
-        columns:
-          - name: order_id
-            tests:
-              - not_null

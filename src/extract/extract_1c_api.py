@@ -18,7 +18,9 @@ from dotenv import load_dotenv
 from requests.auth import HTTPBasicAuth
 
 # --- Configuration & Setup ---
-BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+if BASE_DIR not in sys.path:
+    sys.path.append(BASE_DIR)
 load_dotenv(os.path.join(BASE_DIR, '.env'))
 
 LOG_DIR = os.path.join(BASE_DIR, 'logs')
@@ -52,6 +54,7 @@ class Config:
     ALERT_SMTP_PASS = os.getenv('ALERT_SMTP_PASS')
     ALERT_FROM      = os.getenv('ALERT_FROM')
     ALERT_TO        = os.getenv('ALERT_TO')
+    ALERT_CC        = os.getenv('ALERT_CC')
 
     @classmethod
     def validate(cls):
@@ -167,6 +170,7 @@ class OneCExtractor:
             logger.info("Database connection established and schema verified.")
         except Exception as e:
             logger.error(f"Database connection failed: {e}")
+            sys.stderr.write(f"Database connection failed: {e}\n")
             sys.exit(1)
 
     def close_db(self):
@@ -189,32 +193,9 @@ class OneCExtractor:
         return month_ends
 
     # ------------------------------------------------------------------
-    # Alerting
-    # ------------------------------------------------------------------
-    def send_alert_email(self, subject: str, message: str):
-        if not Config.ALERT_SMTP_HOST or not Config.ALERT_TO:
-            logger.warning("SMTP not configured, skipping email alert.")
-            return
-        try:
-            msg = MIMEMultipart()
-            msg['From'] = Config.ALERT_FROM or Config.ALERT_SMTP_USER or "alert@example.com"
-            msg['To'] = Config.ALERT_TO
-            msg['Subject'] = subject
-            msg.attach(MIMEText(message, 'plain'))
-            
-            server = smtplib.SMTP(Config.ALERT_SMTP_HOST, int(Config.ALERT_SMTP_PORT))
-            server.starttls()
-            if Config.ALERT_SMTP_USER and Config.ALERT_SMTP_PASS:
-                server.login(Config.ALERT_SMTP_USER, Config.ALERT_SMTP_PASS)
-            
-            server.send_message(msg)
-            server.quit()
-            logger.info("Alert email sent successfully.")
-        except Exception as e:
-            logger.error(f"Failed to send alert email: {e}")
-
     # ------------------------------------------------------------------
     # API
+    # ------------------------------------------------------------------
     # ------------------------------------------------------------------
     def fetch_data(self, path: str, retries: int = 3) -> Optional[Dict[str, Any]]:
         url = f"{self.base_url}{path}"
@@ -229,7 +210,6 @@ class OneCExtractor:
                 logger.warning(f"{last_error} for {url}")
                 if response.status_code == 401:
                     logger.error("Authentication failed. Check credentials.")
-                    self.send_alert_email("1C API Auth Failed", f"URL: {url}\nError: {last_error}")
                     return None
             except Exception as e:
                 last_error = str(e)
@@ -238,13 +218,12 @@ class OneCExtractor:
             if attempt < retries:
                 time.sleep(2 ** attempt)
         
-        self.send_alert_email("1C API Fetch Failed", f"Failed to fetch {url} after {retries} attempts.\nLast Error: {last_error}")
         return None
 
     # ------------------------------------------------------------------
     # DB write: UPSERT by month+year
     # ------------------------------------------------------------------
-    def save_to_db(self, endpoint_code: str, data: Dict[str, Any], report_date: date) -> bool:
+    def save_to_db(self, endpoint_code: str, data: Dict[str, Any], report_date: date) -> tuple:
         """
         Upsert logic keyed on (month, year):
           - If a row already exists for the same year+month  -> UPDATE payload, report_date (today's actual date), updated_at
@@ -286,18 +265,20 @@ class OneCExtractor:
                     old_date = existing[1]
                     cur.execute(update_sql, (payload_str, report_date, row_id))
                     action = f"UPDATED (was {old_date} -> now {report_date})"
+                    action_type = "UPDATED"
                 else:
                     cur.execute(insert_sql, (report_date, payload_str))
                     action = f"INSERTED (report_date={report_date})"
+                    action_type = "INSERTED"
 
             self.conn.commit()
             logger.info(f"  [DB] {config['name']} for {report_date.year}-{report_date.month:02d}: {action}")
-            return True
+            return True, action_type
 
         except Exception as e:
             self.conn.rollback()
             logger.error(f"  [DB] Failed to save {endpoint_code} for {report_date}: {e}")
-            return False
+            return False, str(e)
 
     # ------------------------------------------------------------------
     # Main run
@@ -316,9 +297,6 @@ class OneCExtractor:
 
         # --- Date resolution ---
         if mode == 'current':
-            # No args supplied -> use today's actual date (not forced to month-end)
-            # The UPSERT in save_to_db will find any existing row for this month+year
-            # and update report_date to today's date so it always reflects when data was last fetched.
             target_dates = [today]
             logger.info(f"Mode: current  ->  target date: {today.isoformat()} ({today.year}-{today.month:02d})")
         elif mode == 'specific':
@@ -365,31 +343,74 @@ class OneCExtractor:
                     logger.error(f"  [DB] Failed to truncate table {table}: {e}")
                     sys.exit(1)
 
+        # Import metadata log utilities here to avoid circular imports if any
+        from src.utils.etl_utils import init_metadata_table, start_metadata_log, end_metadata_log
+        
+        try:
+            init_metadata_table()
+        except Exception as e:
+            logger.warning(f"Could not init metadata table: {e}")
+
         # --- Extraction loop ---
         errors = []
-        for d in target_dates:
-            logger.info(f"\n>>> Processing {d.year}-{d.month:02d} (API date: {d.isoformat()}) <<<")
-            api_date_str = d.strftime('%d-%m-%Y')
+        for ep in eps_to_process:
+            config = ENDPOINT_CONFIG[ep]
+            table = config['table']
+            logger.info(f"--- Starting Extraction for {config['name']} ---")
+            
+            run_id = None
+            ep_inserted = 0
+            ep_updated = 0
+            ep_errors = []
 
-            for ep in eps_to_process:
-                config = ENDPOINT_CONFIG[ep]
+            try:
+                run_id, _ = start_metadata_log(
+                    target_table=table.split('.')[-1],
+                    refresh_type='FULL' if truncate else 'INCREMENTAL',
+                    load_strategy='UPSERT',
+                    source_table=f'1c_api_{ep}',
+                    pipeline_name='1c_api_extraction',
+                    source_system='1c_api',
+                    source_schema=None
+                )
+            except Exception as e:
+                logger.warning(f"Failed to start metadata log: {e}")
+
+            for d in target_dates:
+                logger.info(f"\n>>> Processing {d.year}-{d.month:02d} (API date: {d.isoformat()}) <<<")
+                api_date_str = d.strftime('%d-%m-%Y')
                 path   = f"{config['path']}{api_date_str}"
 
                 logger.info(f"  Fetching {config['name']} ...")
                 data = self.fetch_data(path)
 
                 if data:
-                    if not self.save_to_db(ep, data, d):
-                        errors.append(f"{ep}@{d}")
-                        self.send_alert_email("1C API DB Save Failed", f"Failed to save {ep} for date {d} to database.")
+                    success, action_type = self.save_to_db(ep, data, d)
+                    if not success:
+                        ep_errors.append(f"DB Save Failed @ {d}")
+                    else:
+                        if action_type == "INSERTED": ep_inserted += 1
+                        elif action_type == "UPDATED": ep_updated += 1
                 else:
                     logger.error(f"  Failed to fetch {ep} for {d}")
-                    errors.append(f"{ep}@{d}")
+                    ep_errors.append(f"API Fetch Failed @ {d}")
+
+            if ep_errors:
+                errors.extend([f"{ep}: {e}" for e in ep_errors])
+                try:
+                    if run_id: end_metadata_log(run_id, 'FAILED', error_message="; ".join(ep_errors))
+                except Exception as e: logger.warning(f"Failed to write end metadata log: {e}")
+            else:
+                try:
+                    if run_id: end_metadata_log(run_id, 'SUCCESS', rows_extracted=ep_inserted + ep_updated, rows_inserted=ep_inserted, rows_updated=ep_updated)
+                except Exception as e: logger.warning(f"Failed to write end metadata log: {e}")
 
         self.close_db()
 
         if errors:
-            logger.error(f"\nProcess finished with {len(errors)} error(s): {', '.join(errors)}")
+            err_msg = f"\nProcess finished with {len(errors)} error(s): {', '.join(errors)}"
+            logger.error(err_msg)
+            sys.stderr.write(err_msg + "\n")
             sys.exit(1)
         else:
             logger.info("\nAll tasks completed successfully.")

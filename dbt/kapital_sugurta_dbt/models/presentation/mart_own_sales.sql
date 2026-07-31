@@ -32,7 +32,7 @@ WITH own_sales AS (
         SUM(kom_sum)         AS commission_uzs,
         SUM(claim_value)     AS claims_uzs,
         SUM(fifty)           AS motivation_uzs,
-        SUM(ras_value)       AS reinsurance_uzs,
+        SUM(ras_value)       AS terminated_uzs,
         0::NUMERIC           AS strah_summa_uzs
 
     FROM {{ ref('curated_partner_indicators') }}
@@ -70,7 +70,7 @@ call_center AS (
         kom_sum              AS commission_uzs,
         claim_value          AS claims_uzs,
         fifty                AS motivation_uzs,
-        ras_value            AS reinsurance_uzs,
+        ras_value            AS terminated_uzs,
         strah_summa          AS strah_summa_uzs
 
     FROM {{ ref('curated_call_center_indicators') }}
@@ -106,11 +106,11 @@ SELECT
     commission_uzs,
     claims_uzs,
     motivation_uzs,
-    reinsurance_uzs,
+    terminated_uzs,
     strah_summa_uzs,
 
     -- Net profit after all deductions
-    (premium_uzs - commission_uzs - claims_uzs - motivation_uzs - reinsurance_uzs)
+    (premium_uzs - commission_uzs - claims_uzs - motivation_uzs - terminated_uzs)
         AS net_profit_uzs,
 
     -- Profitability %
@@ -118,7 +118,7 @@ SELECT
         WHEN premium_uzs > 0
         THEN ROUND(
                 (
-                    (premium_uzs - commission_uzs - claims_uzs - motivation_uzs - reinsurance_uzs)
+                    (premium_uzs - commission_uzs - claims_uzs - motivation_uzs - terminated_uzs)
                     / premium_uzs * 100
                 )::NUMERIC,
              2)

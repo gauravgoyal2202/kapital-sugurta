@@ -6,7 +6,7 @@ from sqlalchemy import create_engine
 from dotenv import load_dotenv
 
 # Set up paths
-BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 LOG_DIR = os.path.join(BASE_DIR, 'logs')
 os.makedirs(LOG_DIR, exist_ok=True)
 LOG_FILE = os.path.join(LOG_DIR, 'load_solvency_adequacy.log')
@@ -23,44 +23,77 @@ formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
 console.setFormatter(formatter)
 logging.getLogger('').addHandler(console)
 
+# ── Metadata DB audit ─────────────────────────────────────────────────────────
+sys.path.insert(0, BASE_DIR)
+from src.utils.etl_utils import init_metadata_table, start_metadata_log, end_metadata_log
+
+TARGET_TABLE = 'solvency_adequacy'
+
 def main():
     logging.info('--- Started loading Solvency Adequacy data ---')
-    
+
+    # Initialise audit table (idempotent — safe to call every run)
+    try:
+        init_metadata_table()
+    except Exception as e:
+        logging.warning(f"Could not init metadata table: {e}")
+
+    # Start audit log — status = RUNNING
+    run_id = None
+    try:
+        run_id, _ = start_metadata_log(
+            target_table=TARGET_TABLE,
+            refresh_type='FULL',
+            source_table='gdrive_solvency_excel',
+            load_strategy='TRUNCATE_AND_RELOAD',
+            pipeline_name='solvency_adequacy_excel_to_postgres',
+            source_system='google_drive',
+            source_schema=None
+        )
+    except Exception as e:
+        logging.warning(f"Could not start metadata log: {e}")
+
     # Load .env variables
     env_path = os.path.join(BASE_DIR, '.env')
     load_dotenv(env_path)
-    
+
     pg_host = os.getenv('PG_HOST')
     pg_port = os.getenv('PG_PORT', '5432')
     pg_db = os.getenv('PG_DATABASE')
     pg_user = os.getenv('PG_USER')
     pg_pass = os.getenv('PG_PASSWORD')
-    
+
     if not all([pg_host, pg_db, pg_user, pg_pass]):
-        logging.error("Missing Database configuration in .env file.")
+        msg = "Missing Database configuration in .env file."
+        logging.error(msg)
+        if run_id:
+            end_metadata_log(run_id, 'FAILED', error_message=msg)
         sys.exit(1)
-        
+
     import urllib.parse
     pg_pass_encoded = urllib.parse.quote_plus(pg_pass)
     engine_url = f"postgresql://{pg_user}:{pg_pass_encoded}@{pg_host}:{pg_port}/{pg_db}"
     engine = create_engine(engine_url)
-    
+
     # Define source file path from Google Drive
     gdrive_link = os.getenv('GDRIVE_SOLVENCY_ADEQUACY_LINK')
     if not gdrive_link:
-        logging.error("GDRIVE_SOLVENCY_ADEQUACY_LINK not found in .env")
+        msg = "GDRIVE_SOLVENCY_ADEQUACY_LINK not found in .env"
+        logging.error(msg)
+        if run_id:
+            end_metadata_log(run_id, 'FAILED', error_message=msg)
         sys.exit(1)
 
     import gdown
     import glob
     import shutil
-    
-    gdrive_download_dir = os.path.join(BASE_DIR, 'excel_drop', 'gdrive_solvency')
+
+    gdrive_download_dir = os.path.join(BASE_DIR, 'data', 'raw', 'gdrive_solvency')
     # Clear directory to ensure we only process the latest download
     if os.path.exists(gdrive_download_dir):
         shutil.rmtree(gdrive_download_dir)
     os.makedirs(gdrive_download_dir, exist_ok=True)
-    
+
     logging.info(f"Downloading Google Drive folder from {gdrive_link}...")
     try:
         cwd = os.getcwd()
@@ -68,52 +101,50 @@ def main():
         gdown.download_folder(gdrive_link, quiet=True, use_cookies=False)
         os.chdir(cwd)
     except Exception as e:
-        logging.error(f"Failed to download from Google Drive: {e}", exc_info=True)
+        msg = f"Failed to download from Google Drive: {e}"
+        logging.error(msg, exc_info=True)
+        if run_id:
+            end_metadata_log(run_id, 'FAILED', error_message=msg)
         sys.exit(1)
 
     search_pattern = os.path.join(gdrive_download_dir, '**', '*.xlsx')
     excel_files = glob.glob(search_pattern, recursive=True)
-    
+
     if not excel_files:
-        logging.error(f"No Excel file found for Solvency Adequacy in downloaded Drive folder.")
+        msg = "No Excel file found for Solvency Adequacy in downloaded Drive folder."
+        logging.error(msg)
+        if run_id:
+            end_metadata_log(run_id, 'FAILED', error_message=msg)
         sys.exit(1)
-        
+
     excel_path = excel_files[0]
     logging.info(f"Found Excel file: {excel_path}")
-        
+
     try:
-        # Read Excel: row 1 is header (header=0 in pandas), row 2 is data
         logging.info(f"Reading data from {excel_path}...")
         df = pd.read_excel(excel_path, header=0)
-        
-        # Log basic stats
+
         logging.info(f"Loaded {len(df)} rows and {len(df.columns)} columns from Excel.")
         logging.info(f"Columns found: {', '.join(df.columns.tolist())}")
-        
+
         # Add metadata
         df['loaded_at'] = pd.Timestamp.now()
-        
-        # Load into Postgres (raw schema)
+
         schema_name = 'raw'
         table_name = 'solvency_adequacy'
 
         from sqlalchemy import text
 
-        # Ensure schema and table exist (outside main transaction — DDL is idempotent)
         with engine.begin() as setup_conn:
             setup_conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {schema_name};"))
 
-        # Single transaction: TRUNCATE + INSERT — rolls back fully on any error
         logging.info(f"Writing data to PostgreSQL table {schema_name}.{table_name} (transactional)...")
         with engine.connect() as conn:
             with conn.begin():
-                # TRUNCATE with RESTART IDENTITY resets the serial PK to 1
                 conn.execute(text(
                     f"TRUNCATE TABLE {schema_name}.{table_name} RESTART IDENTITY;"
                 ))
                 logging.info(f"Table {schema_name}.{table_name} truncated (PK sequence reset).")
-
-                # Insert all rows via the same connection (same transaction)
                 df.to_sql(
                     table_name,
                     con=conn,
@@ -122,19 +153,24 @@ def main():
                     index=False
                 )
                 logging.info(f"Inserted {len(df)} rows — committing transaction.")
-            # conn.begin().__exit__ commits here; any exception triggers rollback
 
         logging.info("Data dumped to database successfully.")
 
         if os.path.exists(gdrive_download_dir):
             shutil.rmtree(gdrive_download_dir)
             logging.info(f"Cleaned up temporary download directory: {gdrive_download_dir}")
-        
-        
+
+        # ── Audit: SUCCESS ────────────────────────────────────────────────────
+        if run_id:
+            end_metadata_log(run_id, 'SUCCESS', rows_extracted=len(df), rows_inserted=len(df))
+
     except Exception as e:
-        logging.error(f"Failed to load Solvency Adequacy data: {e}", exc_info=True)
+        msg = f"Failed to load Solvency Adequacy data: {e}"
+        logging.error(msg, exc_info=True)
+        if run_id:
+            end_metadata_log(run_id, 'FAILED', error_message=msg)
         sys.exit(1)
-        
+
     logging.info('--- Loading completed ---')
 
 if __name__ == '__main__':

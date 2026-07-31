@@ -53,3 +53,7 @@ sources:
       - name: sp_reinsurance_type_oracle
       - name: sp_reinsurance_brokers_oracle
       - name: kontragent_report
+      - name: ins_bank_pturi_oracle
+      - name: ins_osgo_oracle
+      - name: ins_link_oracle
+      - name: ins_link_klass_oracle

@@ -37,12 +37,13 @@ from email.mime.multipart import MIMEMultipart
 
 # --- SMTP CONFIGURATION (Pulled from .env) ---
 SMTP_CONFIG = {
-    "server": os.getenv("SMTP_SERVER"),
-    "port": int(os.getenv("SMTP_PORT", 587)),
-    "user": os.getenv("SMTP_USER"),
-    "pass": os.getenv("SMTP_PASS")
+    "server": os.getenv("ALERT_SMTP_HOST"),
+    "port": int(os.getenv("ALERT_SMTP_PORT", 587)),
+    "user": os.getenv("ALERT_SMTP_USER"),
+    "pass": os.getenv("ALERT_SMTP_PASS")
 }
-SMTP_TO = os.getenv("SMTP_TO", "responsible_person@kapital.uz")
+SMTP_TO = os.getenv("ALERT_TO", "responsible_person@kapital.uz")
+SMTP_CC = os.getenv("ALERT_CC")
 
 def get_pg_conn():
     return psycopg2.connect(
@@ -160,7 +161,7 @@ def init_metadata_table():
             
         conn.commit()
 
-def start_metadata_log(target_table, refresh_type, source_table=None, watermark_col=None, primary_keys=None, load_strategy=None):
+def start_metadata_log(target_table, refresh_type, source_table=None, watermark_col=None, primary_keys=None, load_strategy=None, pipeline_name='oracle_to_postgres', source_system='oracle', source_schema='KAPITAL_SUGURTA', target_system='postgres', target_schema='raw'):
     """Inserts a new run record with 'RUNNING' status and returns the run_id."""
     import os
     import datetime
@@ -188,15 +189,15 @@ def start_metadata_log(target_table, refresh_type, source_table=None, watermark_
             cur.execute("""
                 INSERT INTO raw.etl_refresh_metadata (
                     pipeline_name, source_system, source_schema, source_table_name,
-                    target_schema, target_table_name, refresh_type, load_strategy,
+                    target_system, target_schema, target_table_name, refresh_type, load_strategy,
                     watermark_column, last_watermark_value, primary_key_columns,
                     refresh_start_time, status, batch_id
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING run_id;
             """, (
-                'oracle_to_postgres', 'oracle', 'KAPITAL_SUGURTA', source_table or target_table.replace('_oracle', '').upper(),
-                'raw', target_table, refresh_type, load_strategy,
+                pipeline_name, source_system, source_schema, source_table or target_table.replace('_oracle', '').upper(),
+                target_system, target_schema, target_table, refresh_type, load_strategy,
                 watermark_col, last_wm, primary_keys,
                 start_time, 'RUNNING', batch_id
             ))
@@ -259,10 +260,13 @@ def update_metadata(table_name, status, watermark=None, refresh_type=None, start
             ))
         conn.commit()
 
-def send_email(subject, body, to_email=None):
-    """Standard utility to send email alerts with a fallback to logging."""
+def send_email(subject, body, to_email=None, cc_email=None):
+    """Standard utility to send email alerts with a fallback to logging.
+    Accepts either a plain string body or an HTML string body.
+    """
     target_email = to_email or SMTP_TO
-    
+    target_cc = cc_email or SMTP_CC
+
     # Check if SMTP is configured
     if not SMTP_CONFIG["server"] or not SMTP_CONFIG["user"]:
         logging.warning("!!! SMTP NOT CONFIGURED !!!")
@@ -271,12 +275,18 @@ def send_email(subject, body, to_email=None):
         return
 
     try:
-        msg = MIMEMultipart()
-        msg['From'] = SMTP_CONFIG["user"]
-        msg['To'] = target_email
+        msg = MIMEMultipart("alternative")
+        msg['From']    = SMTP_CONFIG["user"]
+        msg['To']      = target_email
+        if target_cc:
+            msg['Cc']  = target_cc
         msg['Subject'] = f"[ETL ALERT] {subject}"
-        msg.attach(MIMEText(body, 'plain'))
-        
+
+        # Attach plain-text fallback first, then HTML
+        plain_fallback = body if not body.strip().startswith("<") else "See HTML version of this email."
+        msg.attach(MIMEText(plain_fallback, 'plain'))
+        msg.attach(MIMEText(body, 'html'))
+
         server = smtplib.SMTP(SMTP_CONFIG["server"], SMTP_CONFIG["port"])
         server.starttls()
         server.login(SMTP_CONFIG["user"], SMTP_CONFIG["pass"])
@@ -286,3 +296,140 @@ def send_email(subject, body, to_email=None):
     except Exception as e:
         logging.error(f"Failed to send email: {str(e)}")
         logging.warning(f"ORIGINAL ALERT: {subject} - {body}")
+
+
+def send_pipeline_alert(step_name, error_detail, pipeline_name="ETL Pipeline",
+                        extra_rows=None, to_email=None, cc_email=None):
+    """
+    Send a richly formatted HTML alert email for a pipeline step failure.
+
+    Parameters
+    ----------
+    step_name   : str  – e.g. "Oracle Migration", "dbt Run", "API Fetch"
+    error_detail: str  – full error text / traceback / dbt model failures
+    pipeline_name: str – display name shown in the email header
+    extra_rows  : list of (label, value) tuples for additional context rows
+    to_email    : str  – override recipient
+    """
+    import datetime, socket
+    now       = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    hostname  = socket.gethostname()
+
+    # ── subject line ─────────────────────────────────────────────────────────
+    subject = f"{pipeline_name} — FAILED at [{step_name}]"
+
+    # ── build extra context rows ──────────────────────────────────────────────
+    extra_html = ""
+    if extra_rows:
+        for label, value in extra_rows:
+            extra_html += f"""
+            <tr>
+              <td style="padding:8px 12px;background:#f4f6f9;font-weight:600;
+                         color:#374151;white-space:nowrap;border-bottom:1px solid #e5e7eb;">
+                {label}
+              </td>
+              <td style="padding:8px 12px;color:#1f2937;border-bottom:1px solid #e5e7eb;
+                         word-break:break-all;">
+                {value}
+              </td>
+            </tr>"""
+
+    # ── error detail block (preserve newlines) ────────────────────────────────
+    error_escaped = (error_detail or "No error detail captured.")
+    # convert newlines to <br> for HTML display
+    error_html = error_escaped.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\n", "<br>")
+
+    # ── full HTML body ────────────────────────────────────────────────────────
+    html_body = f"""
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body {{ font-family: 'Segoe UI', Arial, sans-serif; background:#f0f2f5;
+            margin:0; padding:24px; color:#1f2937; }}
+    .card {{ background:#ffffff; border-radius:10px; max-width:680px;
+             margin:0 auto; box-shadow:0 2px 12px rgba(0,0,0,.10); overflow:hidden; }}
+    .header {{ background:linear-gradient(135deg,#b91c1c 0%,#7f1d1d 100%);
+               padding:24px 28px; }}
+    .header h1 {{ margin:0; color:#fff; font-size:20px; letter-spacing:.3px; }}
+    .header p  {{ margin:6px 0 0; color:#fca5a5; font-size:13px; }}
+    .badge {{ display:inline-block; background:#fef2f2; color:#b91c1c;
+              border:1px solid #fecaca; border-radius:20px;
+              padding:4px 14px; font-size:13px; font-weight:700;
+              margin-top:10px; }}
+    .section {{ padding:20px 28px; }}
+    .section h2 {{ font-size:14px; text-transform:uppercase; letter-spacing:.8px;
+                   color:#6b7280; margin:0 0 10px; }}
+    table {{ width:100%; border-collapse:collapse; font-size:13.5px; }}
+    .step-row td {{ background:#fff7ed !important; color:#92400e !important;
+                    font-weight:700 !important; }}
+    .error-box {{ background:#fef2f2; border-left:4px solid #ef4444;
+                  border-radius:4px; padding:14px 16px; margin:0;
+                  font-family:'Courier New',monospace; font-size:12px;
+                  color:#7f1d1d; white-space:pre-wrap; word-break:break-all;
+                  max-height:360px; overflow:auto; }}
+    .footer {{ background:#f9fafb; padding:14px 28px;
+               border-top:1px solid #e5e7eb; font-size:11.5px; color:#9ca3af;
+               text-align:center; }}
+    .pill {{ display:inline-block; background:#dbeafe; color:#1e40af;
+             border-radius:12px; padding:2px 10px; font-size:11px;
+             font-weight:600; margin-left:6px; }}
+  </style>
+</head>
+<body>
+<div class="card">
+
+  <!-- Header -->
+  <div class="header">
+    <h1>&#9888; Pipeline Failure Alert</h1>
+    <p>{pipeline_name}</p>
+    <span class="badge">&#10060; FAILED</span>
+  </div>
+
+  <!-- Summary table -->
+  <div class="section">
+    <h2>Failure Summary</h2>
+    <table>
+      <tr class="step-row">
+        <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;">&#128680; Failed Step</td>
+        <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;">{step_name}</td>
+      </tr>
+      <tr>
+        <td style="padding:8px 12px;background:#f4f6f9;font-weight:600;color:#374151;
+                   white-space:nowrap;border-bottom:1px solid #e5e7eb;">&#128336; Timestamp</td>
+        <td style="padding:8px 12px;color:#1f2937;border-bottom:1px solid #e5e7eb;">{now}</td>
+      </tr>
+      <tr>
+        <td style="padding:8px 12px;background:#f4f6f9;font-weight:600;color:#374151;
+                   white-space:nowrap;border-bottom:1px solid #e5e7eb;">&#128187; Hostname</td>
+        <td style="padding:8px 12px;color:#1f2937;border-bottom:1px solid #e5e7eb;">{hostname}</td>
+      </tr>
+      <tr>
+        <td style="padding:8px 12px;background:#f4f6f9;font-weight:600;color:#374151;
+                   white-space:nowrap;border-bottom:1px solid #e5e7eb;">&#128196; Pipeline</td>
+        <td style="padding:8px 12px;color:#1f2937;border-bottom:1px solid #e5e7eb;">{pipeline_name}</td>
+      </tr>
+      {extra_html}
+    </table>
+  </div>
+
+  <!-- Error detail -->
+  <div class="section" style="padding-top:0;">
+    <h2>Error Detail</h2>
+    <div class="error-box">{error_html}</div>
+  </div>
+
+  <!-- Footer -->
+  <div class="footer">
+    This alert was generated automatically by the Kapital Sugurta ETL Pipeline.
+    <br>Server: <strong>{hostname}</strong> &nbsp;|&nbsp; Time: <strong>{now}</strong>
+    <br><br>
+    To silence this alert, check the pipeline log on the server and fix the root cause.
+  </div>
+
+</div>
+</body>
+</html>"""
+
+    send_email(subject, html_body, to_email=to_email, cc_email=cc_email)

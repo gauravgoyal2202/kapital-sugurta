@@ -36,7 +36,7 @@ from psycopg2.extras import execute_values
 from dotenv import load_dotenv
 
 # ── env & logging ──────────────────────────────────────────────────────────────
-BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 load_dotenv(os.path.join(BASE_DIR, '.env'))
 
 os.makedirs(os.path.join(BASE_DIR, 'logs'), exist_ok=True)
