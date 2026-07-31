@@ -165,7 +165,37 @@ SELECT
     s.report_month,
     s.bank_partner_name,
     s.customer_segment,
+    CASE s.customer_segment
+        WHEN 'Physical'  THEN 'Физическое лицо'
+        WHEN 'Juridical' THEN 'Юридическое лицо'
+        ELSE s.customer_segment
+    END AS customer_segment_ru,
+    CASE s.customer_segment
+        WHEN 'Physical'  THEN 'Жисмоний'
+        WHEN 'Juridical' THEN 'Юридик'
+        ELSE s.customer_segment
+    END AS customer_segment_uz_cyrl,
+    CASE s.customer_segment
+        WHEN 'Physical'  THEN 'Jismoniy'
+        WHEN 'Juridical' THEN 'Yuridik'
+        ELSE s.customer_segment
+    END AS customer_segment_uz_latn,
     s.insurance_type,
+    CASE s.insurance_type
+        WHEN 'Compulsory' THEN 'Обязательное'
+        WHEN 'Mandatory'  THEN 'Обязательное'
+        ELSE 'Добровольное'
+    END AS insurance_type_ru,
+    CASE s.insurance_type
+        WHEN 'Compulsory' THEN 'Мажбурий'
+        WHEN 'Mandatory'  THEN 'Мажбурий'
+        ELSE 'Ихтиёрий'
+    END AS insurance_type_uz_cyrl,
+    CASE s.insurance_type
+        WHEN 'Compulsory' THEN 'Majburiy'
+        WHEN 'Mandatory'  THEN 'Majburiy'
+        ELSE 'Ixtiyoriy'
+    END AS insurance_type_uz_latn,
     s.product_category,
     s.product_name,
     s.sales_channel,

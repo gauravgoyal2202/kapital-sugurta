@@ -18,20 +18,25 @@ WITH customer_monthly_state AS (
         report_month,
         customer_id,
         MAX(legal_form) AS legal_form,
+        MAX(legal_form_ru) AS legal_form_ru,
+        MAX(legal_form_uz_cyrl) AS legal_form_uz_cyrl,
+        MAX(legal_form_uz_latn) AS legal_form_uz_latn,
         MAX(customer_segment) AS customer_segment,
+        MAX(customer_segment_ru) AS customer_segment_ru,
+        MAX(customer_segment_uz_cyrl) AS customer_segment_uz_cyrl,
+        MAX(customer_segment_uz_latn) AS customer_segment_uz_latn,
         MAX(oked_industry_code) AS oked_industry_code,
         MAX(region_code) AS region_code,
+        MAX(region_code_uz) AS region_code_uz,
+        MAX(region_code_lat) AS region_code_lat,
         COUNT(DISTINCT policy_id) AS active_policy_count,
         
-        -- Point in Time checks:
-        -- 1. Was active on EXACTLY the first day of the month?
         MAX(CASE 
             WHEN exact_start_date <= report_month 
              AND exact_end_date >= report_month 
             THEN 1 ELSE 0 
         END) AS active_on_first_day,
         
-        -- 2. Was active on EXACTLY the last day of the month?
         MAX(CASE 
             WHEN exact_start_date <= (report_month + INTERVAL '1 month' - INTERVAL '1 day')::DATE 
              AND exact_end_date >= (report_month + INTERVAL '1 month' - INTERVAL '1 day')::DATE 
@@ -46,18 +51,21 @@ SELECT
     report_month,
     customer_id,
     legal_form,
+    legal_form_ru,
+    legal_form_uz_cyrl,
+    legal_form_uz_latn,
     customer_segment,
+    customer_segment_ru,
+    customer_segment_uz_cyrl,
+    customer_segment_uz_latn,
     oked_industry_code,
     region_code,
+    region_code_uz,
+    region_code_lat,
     active_policy_count,
     
-    -- Active at any point in the month (since they are in this table, they were active)
     1 AS is_active_curr,
-    
-    -- Client's Denominator: Active on the FIRST day of the month
-    active_on_first_day AS was_active_prev, -- Kept alias to prevent breaking downstream models
-    
-    -- Client's Numerator: Active on BOTH first day and last day
+    active_on_first_day AS was_active_prev,
     CASE WHEN active_on_first_day = 1 AND active_on_last_day = 1 THEN 1 ELSE 0 END AS is_retained
 
 FROM customer_monthly_state

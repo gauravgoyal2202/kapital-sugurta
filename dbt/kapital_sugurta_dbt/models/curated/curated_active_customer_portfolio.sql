@@ -51,17 +51,31 @@ SELECT
     p.exact_start_date,
     p.exact_end_date,
     
-    -- Common Dashboard 16 Filters
     CASE WHEN p.fizyur = 0 THEN 'Physical' ELSE 'Juridical' END AS legal_form,
+    CASE WHEN p.fizyur = 0 THEN 'Физическое лицо' ELSE 'Юридическое лицо' END AS legal_form_ru,
+    CASE WHEN p.fizyur = 0 THEN 'Жисмоний' ELSE 'Юридик' END AS legal_form_uz_cyrl,
+    CASE WHEN p.fizyur = 0 THEN 'Jismoniy' ELSE 'Yuridik' END AS legal_form_uz_latn,
+
     CASE WHEN p.fizyur = 0 THEN 'Retail' ELSE 'Corporate' END AS customer_segment,
+    CASE WHEN p.fizyur = 0 THEN 'Розничный' ELSE 'Корпоративный' END AS customer_segment_ru,
+    CASE WHEN p.fizyur = 0 THEN 'Чакана' ELSE 'Корпоратив' END AS customer_segment_uz_cyrl,
+    CASE WHEN p.fizyur = 0 THEN 'Chakana' ELSE 'Korporativ' END AS customer_segment_uz_latn,
     
     COALESCE(p.oked_code::VARCHAR, 'Unknown') AS oked_industry_code,
     
-    -- Extracting base region prefix for area mapping
-    SUBSTRING(p.primary_division_code::VARCHAR, 1, 2) AS region_code
+    -- Extracting region name (falling back to exact division name, region prefix code, or Unknown)
+    COALESCE(div_main.sp_name1, div_exact.sp_name1, SUBSTRING(p.primary_division_code::VARCHAR, 1, 2), 'Unknown') AS region_code,
+    -- Uzbek Cyrillic region name
+    COALESCE(div_main.sp_name2, div_exact.sp_name2, SUBSTRING(p.primary_division_code::VARCHAR, 1, 2), 'Unknown') AS region_code_uz,
+    -- Uzbek Latin region name
+    COALESCE(div_main.sp_name3, div_exact.sp_name3, SUBSTRING(p.primary_division_code::VARCHAR, 1, 2), 'Unknown') AS region_code_lat
 
 FROM month_spine s
 -- Core overlap logic: Policy spans over this month!
 JOIN raw_active_policies p 
     ON s.report_month >= p.start_month 
    AND s.report_month <= p.end_month
+LEFT JOIN {{ source('raw', 'sp_division_oracle') }} div_main
+    ON div_main.sp_id::text = (SUBSTRING(p.primary_division_code::VARCHAR, 1, 2) || '000')
+LEFT JOIN {{ source('raw', 'sp_division_oracle') }} div_exact
+    ON div_exact.sp_id = p.primary_division_code

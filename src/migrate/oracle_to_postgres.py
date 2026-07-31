@@ -84,7 +84,8 @@ TABLES_TO_MIGRATE = [
     'INS_BANK_PTURI',
     'INS_OSGO',
     'INS_LINK_KLASS',
-    'INS_LINK'
+    'INS_LINK',
+    'INS_LOSS'
 ]
 
 BATCH_SIZE = 10000
@@ -166,7 +167,8 @@ INCREMENTAL_CONFIG = {
     'tb_polis': 'TB_DATE_BEGIN',
     'TB_USERS': 'TB_VIDANDATE',
     'INS_BANK_PTURI': 'CREATED_DATE',
-    'INS_OSGO': 'INS_ID'
+    'INS_OSGO': 'INS_ID',
+    'INS_LOSS': 'MODIFIED_DATE'
 }
 
 def init_watermark_table(pg_cursor):
@@ -269,6 +271,14 @@ def migrate_table(ora_conn, pg_conn, table_name):
                     pg_type = map_oracle_to_pg_type(col[1], col[2], col[3])
                     pg_cursor.execute(f"ALTER TABLE raw.{pg_table} ADD COLUMN {c_name} {pg_type} NULL")
                     logging.info(f"  [{table_name}] Added missing column: {c_name}")
+
+            # Ensure ETL tracking columns exist
+            if 'etl_uploaded_date' not in current_pg_cols:
+                pg_cursor.execute(f"ALTER TABLE raw.{pg_table} ADD COLUMN etl_uploaded_date TIMESTAMP NULL")
+                logging.info(f"  [{table_name}] Added missing column: etl_uploaded_date")
+            if 'etl_updated_date' not in current_pg_cols:
+                pg_cursor.execute(f"ALTER TABLE raw.{pg_table} ADD COLUMN etl_updated_date TIMESTAMP NULL")
+                logging.info(f"  [{table_name}] Added missing column: etl_updated_date")
 
             # Ensure Primary Key exists for UPSERT logic
             if pk_cols:

@@ -2,7 +2,7 @@
 
 /*
   Curated: Priority Areas raw detail — exact output of original query.
-  Stores month, filtr, channels, and financial metrics without transformation.
+  General/OSAGO-new payments use curated_partner_payment_base (inline fifty / kurs).
   Consumed by mart_commercial_development_priority_areas_base.
 */
 
@@ -41,41 +41,42 @@ rastorg AS (
 
 detailed_data AS (
 
-    /* =========================
-       1) GENERAL INSURANCE
-       ========================= */
+    /* General + OSAGO new: pre-computed payment base (inline fifty / kurs) */
     SELECT
-        'GENERAL_INSURANCE' AS source_type,
+        CASE
+            WHEN pb.pturi_id = 3 THEN 'OSAGO_NEW'
+            ELSE 'GENERAL_INSURANCE'
+        END AS source_type,
 
-        o.anketa_id,
-        o.anketa_id AS ank_id,
-        po.tb_id AS polis_id,
-        o.opl_data,
-        bc.pym_date AS pay_date,
+        pb.anketa_id,
+        pb.anketa_id AS ank_id,
+        pb.polis_id,
+        pb.opl_data,
+        pb.pym_date AS pay_date,
 
         cd.claim_date AS claim_date,
         COALESCE(cla.claim_value, 0) AS claim_value,
 
-        o.oplata,
-        raw.f_ins_valtype(o.opl_val) AS val,
+        pb.oplata,
+        raw.f_ins_valtype(pb.opl_val) AS val,
 
-        o.kommis_summa,
-        o.kommis_summa * raw.F_INS_GETKURS(o.opl_val, bc.pym_date) AS kom_sum,
+        pb.kommis_summa,
+        pb.kom_sum,
 
         CASE
-            WHEN u.tb_surname = 'KSC.UZ'
-             AND u.tb_name = 'WEB'
+            WHEN pb.user_surname = 'KSC.UZ'
+             AND pb.user_name = 'WEB'
             THEN 'Website'
 
-            WHEN bank_k.tb_id IS NOT NULL
-            THEN 'Banks - ' || bank_k.tb_orgname
+            WHEN pb.bank_k_id IS NOT NULL
+            THEN 'Banks - ' || pb.bank_orgname
 
-            WHEN o.user_id IN (19588, 40791, 44788, 20879, 50788)
-            THEN 'Banks - ' || raw.getusername(o.user_id)
+            WHEN pb.user_id IN (19588, 40791, 44788, 20879, 50788)
+            THEN 'Banks - ' || TRIM(COALESCE(pb.user_surname, '') || ' ' || COALESCE(pb.user_name, ''))
 
-            WHEN o.user_id IN (
-                19887,20174,20522,20471,20822,20827,20821,
-                20819,20538,20732,20463,20729,82800,64788,20282
+            WHEN pb.user_id IN (
+                19887, 20174, 20522, 20471, 20822, 20827, 20821,
+                20819, 20538, 20732, 20463, 20729, 82800, 64788, 20282
             )
             THEN 'Marketplace'
 
@@ -83,283 +84,54 @@ detailed_data AS (
         END AS channel,
 
         CASE
-            WHEN akt.akt_type IN (0, 1, 2) THEN 'Agent'
+            WHEN pb.akt_type IN (0, 1, 2) THEN 'Agent'
             ELSE 'Internal'
         END AS agent_network,
 
         CASE
-            WHEN o.user_id IN (
-                82793,40791,64788,21741,20845,20829,20827,20732,20731,20729,
-                20704,20574,20546,20471,20282,20326,20240,20325,19626,20323,
-                19998,19887,19768,20322,19459,20318,19417,20317,19366,20504,
-                20538,20553,20554,20562,20645,20728,20771,20822,20828,20904,
-                21410,21409,21740,21739,21774,40795,72788,82792,82794,82795,
-                19482,19588,19738,20174,20463,20522,20877,19477,
-                21367,21405,21751,35788,44788,67790,8280,21362
+            WHEN pb.user_id IN (
+                82793, 40791, 64788, 21741, 20845, 20829, 20827, 20732, 20731, 20729,
+                20704, 20574, 20546, 20471, 20282, 20326, 20240, 20325, 19626, 20323,
+                19998, 19887, 19768, 20322, 19459, 20318, 19417, 20317, 19366, 20504,
+                20538, 20553, 20554, 20562, 20645, 20728, 20771, 20822, 20828, 20904,
+                21410, 21409, 21740, 21739, 21774, 40795, 72788, 82792, 82794, 82795,
+                19482, 19588, 19738, 20174, 20463, 20522, 20877, 19477,
+                21367, 21405, 21751, 35788, 44788, 67790, 8280, 21362
             ) THEN 'API'
             ELSE 'Not API'
         END AS api_type,
 
-        raw.INS_FIFTY_GET(
-            a.ins_type,
-            o.anketa_id,
-            CASE
-                WHEN o.opl_val = 1 THEN o.oplata
-                ELSE o.opl_summa * o.val_kurs
-            END,
-            3,
-            o.opl_data
-        ) AS fifty_zp,
+        pb.fifty_zp,
+        pb.fifty_dop,
+        pb.fifty_director,
 
-        raw.INS_FIFTY_GET(
-            a.ins_type,
-            o.anketa_id,
-            CASE
-                WHEN o.opl_val = 1 THEN o.oplata
-                ELSE o.opl_summa * o.val_kurs
-            END,
-            4,
-            o.opl_data
-        ) AS fifty_dop,
+        pb.ins_otv,
+        pb.ins_prem,
+        raw.F_INS_PTURIKLASS(pb.pturi_id) AS klass,
 
-        raw.INS_FIFTY_GET(
-            a.ins_type,
-            o.anketa_id,
-            CASE
-                WHEN o.opl_val = 1 THEN o.oplata
-                ELSE o.opl_summa * o.val_kurs
-            END,
-            5,
-            o.opl_data
-        ) AS fifty_director,
+        pb.oplsum,
 
-        a.ins_otv,
-        a.ins_prem,
-        raw.F_INS_PTURIKLASS(o.ins_type) AS klass,
+        pb.bc_id,
+        pb.pym_date,
+        pb.oplata_id AS ins_id,
+        pb.opl_type,
+        pb.ins_div AS division_id,
+        pb.pturi_id,
+        pb.user_id,
+        pb.owner_id
 
-        CASE
-            WHEN o.opl_val = 1 THEN COALESCE(o.oplata, 0)
-            ELSE COALESCE(o.opl_summa, 0) * raw.F_INS_GETKURS(o.opl_val, bc.pym_date)
-        END AS oplsum,
-
-        bc.ins_id AS bc_id,
-        bc.pym_date,
-        o.ins_id,
-        o.opl_type,
-        a.ins_div AS division_id,
-        o.ins_type AS pturi_id,
-        o.user_id,
-        a.owner AS owner_id
-
-    FROM {{ source('raw', 'ins_oplata_oracle') }} o
-
-    LEFT JOIN {{ source('raw', 'ins_anketa_oracle') }} a
-        ON a.ins_id = o.anketa_id
-
-    LEFT JOIN {{ source('raw', 'ins_polis_oracle') }} po
-        ON po.tb_id = o.polis_id
+    FROM {{ ref('curated_partner_payment_base') }} pb
 
     LEFT JOIN claims_by_anketa cla
-        ON cla.anketa_id = o.anketa_id
+        ON cla.anketa_id = pb.anketa_id
 
     LEFT JOIN claim_dates_by_anketa cd
-        ON cd.anketa_id = o.anketa_id
+        ON cd.anketa_id = pb.anketa_id
 
-    LEFT JOIN {{ source('raw', 'ins_bank_client_oracle') }} bc
-        ON o.bc_id = bc.ins_id
-
-    LEFT JOIN {{ source('raw', 'ins_agent_akt_oracle') }} akt
-        ON akt.ins_id = o.akt
-       AND akt.active = 2
-
-    LEFT JOIN {{ source('raw', 'ins_kontragent_oracle') }} bank_k
-        ON bank_k.tb_isbank = 1
-       AND (
-            bank_k.tb_id = a.owner
-            OR bank_k.tb_id = a.beneficiary
-            OR bank_k.tb_id = a.mortgagor
-       )
-
-    LEFT JOIN {{ source('raw', 'tb_users_oracle') }} u
-        ON u.tb_id = o.user_id
-
-    WHERE o.ins_type <> 3
-      AND EXISTS (
-            SELECT 1
-            FROM {{ source('raw', 'ins_polis_oracle') }} p
-            WHERE p.tb_status IN (2, 9, 10)
-              AND p.tb_anketa = o.anketa_id
-      )
-      AND bc.pym_date >= DATE '2021-01-01'
+    WHERE pb.is_osago_old = FALSE
 
     UNION ALL
 
-    /* =========================
-       2) OSAGO NEW TABLE
-       ========================= */
-    SELECT
-        'OSAGO_NEW' AS source_type,
-
-        o.anketa_id,
-        o.anketa_id AS ank_id,
-        po.tb_id AS polis_id,
-        o.opl_data,
-        bc.pym_date AS pay_date,
-
-        cd.claim_date AS claim_date,
-        COALESCE(cla.claim_value, 0) AS claim_value,
-
-        o.oplata,
-        raw.f_ins_valtype(o.opl_val) AS val,
-
-        o.kommis_summa,
-        o.kommis_summa * raw.F_INS_GETKURS(o.opl_val, bc.pym_date) AS kom_sum,
-
-        CASE
-            WHEN u.tb_surname = 'KSC.UZ'
-             AND u.tb_name = 'WEB'
-            THEN 'Website'
-
-            WHEN bank_k.tb_id IS NOT NULL
-            THEN 'Banks - ' || bank_k.tb_orgname
-
-            WHEN o.user_id IN (19588, 40791, 44788, 20879, 50788)
-            THEN 'Banks - ' || raw.getusername(o.user_id)
-
-            WHEN o.user_id IN (
-                19887,20174,20522,20471,20822,20827,20821,
-                20819,20538,20732,20463,20729,82800,64788,20282
-            )
-            THEN 'Marketplace'
-
-            ELSE 'In-House'
-        END AS channel,
-
-        CASE
-            WHEN akt_ch.akt_type IN (0, 1, 2) THEN 'Agent'
-            ELSE 'Internal'
-        END AS agent_network,
-
-        CASE
-            WHEN o.user_id IN (
-                82793,64788,40791,21741,20845,20829,20827,20732,20731,20729,
-                20704,20574,20546,20472,20326,20240,20325,19626,20323,
-                19998,19887,19768,20322,19459,20318,19417,20317,19366,20504,
-                20538,20553,20554,20562,20645,20728,20771,20822,20828,20904,
-                21410,21409,21740,21739,21774,40795,72788,82792,82794,82795,
-                19482,19588,19738,20174,20463,20522,20877,20282,19477,
-                21367,21405,21751,35788,44788,67790,8280,21362
-            ) THEN 'API'
-            ELSE 'Not API'
-        END AS api_type,
-
-        raw.INS_FIFTY_GET(
-            a.ins_type,
-            o.anketa_id,
-            CASE
-                WHEN o.opl_val = 1 THEN o.oplata
-                ELSE o.opl_summa * o.val_kurs
-            END,
-            3,
-            o.opl_data
-        ) AS fifty_zp,
-
-        raw.INS_FIFTY_GET(
-            a.ins_type,
-            o.anketa_id,
-            CASE
-                WHEN o.opl_val = 1 THEN o.oplata
-                ELSE o.opl_summa * o.val_kurs
-            END,
-            4,
-            o.opl_data
-        ) AS fifty_dop,
-
-        raw.INS_FIFTY_GET(
-            a.ins_type,
-            o.anketa_id,
-            CASE
-                WHEN o.opl_val = 1 THEN o.oplata
-                ELSE o.opl_summa * o.val_kurs
-            END,
-            5,
-            o.opl_data
-        ) AS fifty_director,
-
-        a.ins_otv,
-        a.ins_prem,
-        raw.F_INS_PTURIKLASS(o.ins_type) AS klass,
-
-        CASE
-            WHEN o.opl_val = 1 THEN COALESCE(o.oplata, 0)
-            ELSE COALESCE(o.opl_summa, 0) * raw.F_INS_GETKURS(o.opl_val, bc.pym_date)
-        END AS oplsum,
-
-        bc.ins_id AS bc_id,
-        bc.pym_date,
-        o.ins_id,
-        o.opl_type,
-        a.ins_div AS division_id,
-        o.ins_type AS pturi_id,
-        o.user_id,
-        a.owner AS owner_id
-
-    FROM {{ source('raw', 'ins_oplata_oracle') }} o
-
-    LEFT JOIN {{ source('raw', 'ins_anketa_oracle') }} a
-        ON a.ins_id = o.anketa_id
-
-    LEFT JOIN {{ source('raw', 'ins_polis_oracle') }} po
-        ON po.tb_id = o.polis_id
-
-    LEFT JOIN claims_by_anketa cla
-        ON cla.anketa_id = o.anketa_id
-
-    LEFT JOIN claim_dates_by_anketa cd
-        ON cd.anketa_id = o.anketa_id
-
-    LEFT JOIN {{ source('raw', 'ins_kontragent_oracle') }} bank_k
-        ON bank_k.tb_isbank = 1
-       AND (
-            bank_k.tb_id = a.owner
-            OR bank_k.tb_id = a.beneficiary
-            OR bank_k.tb_id = a.mortgagor
-       )
-
-    LEFT JOIN {{ source('raw', 'ins_bank_client_oracle') }} bc
-        ON o.bc_id = bc.ins_id
-       AND bc.status = 2
-
-    LEFT JOIN {{ source('raw', 'ins_agent_akt_oracle') }} akt
-        ON akt.ins_id = o.akt
-       AND akt.active = 2
-
-    LEFT JOIN (
-        SELECT
-            ins_id,
-            MAX(akt_type) AS akt_type
-        FROM {{ source('raw', 'ins_agent_akt_oracle') }}
-        GROUP BY ins_id
-    ) akt_ch
-        ON akt_ch.ins_id = o.akt
-
-    LEFT JOIN {{ source('raw', 'tb_users_oracle') }} u
-        ON u.tb_id = o.user_id
-
-    WHERE o.ins_type = 3
-      AND EXISTS (
-            SELECT 1
-            FROM {{ source('raw', 'ins_polis_oracle') }} p
-            WHERE p.tb_status IN (2, 9, 10)
-              AND p.tb_anketa = o.anketa_id
-      )
-      AND bc.pym_date >= DATE '2021-01-01'
-
-    UNION ALL
-
-    /* =========================
-       3) OSAGO OLD TABLE
-       ========================= */
     SELECT
         'OSAGO_OLD' AS source_type,
 
@@ -480,36 +252,29 @@ main_grouped AS (
         SUM(oplsum) AS oplsum,
         SUM(kom_sum) AS kom_sum,
         SUM(claim_value) AS claim_value,
-        SUM(fifty) AS fifty
-    FROM prepared
+        SUM(fifty) AS fifty,
+        SUM(ras_value) AS ras_value
+    FROM (
+        SELECT
+            p.month,
+            p.pturi_id,
+            p.filtr,
+            p.channels,
+            p.oplsum,
+            p.kom_sum,
+            p.claim_value,
+            p.fifty,
+            COALESCE(r.tb_summa, 0) AS ras_value
+        FROM prepared p
+        LEFT JOIN rastorg r
+            ON r.anketa_id = p.anketa_id
+           AND (r.polis_id = p.polis_id OR r.polis_id IS NULL)
+    ) x
     GROUP BY
         month,
         pturi_id,
         filtr,
         channels
-),
-
-ras_grouped AS (
-    SELECT
-        p.month,
-        p.pturi_id,
-        p.filtr,
-        p.channels,
-        SUM(COALESCE(r.tb_summa, 0)) AS ras_value
-    FROM prepared p
-
-    LEFT JOIN rastorg r
-        ON r.anketa_id = p.anketa_id
-       AND (
-            r.polis_id = p.polis_id
-            OR r.polis_id IS NULL
-       )
-
-    GROUP BY
-        p.month,
-        p.pturi_id,
-        p.filtr,
-        p.channels
 )
 
 SELECT
@@ -521,14 +286,8 @@ SELECT
     m.kom_sum,
     m.claim_value,
     m.fifty,
-    COALESCE(r.ras_value, 0) AS ras_value
+    m.ras_value
 FROM main_grouped m
-
-LEFT JOIN ras_grouped r
-    ON r.month = m.month
-   AND r.pturi_id = m.pturi_id
-   AND r.filtr = m.filtr
-   AND r.channels = m.channels
 
 ORDER BY
     m.month,

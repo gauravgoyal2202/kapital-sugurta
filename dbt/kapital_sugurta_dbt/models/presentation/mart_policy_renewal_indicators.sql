@@ -12,6 +12,21 @@ SELECT
     EXTRACT(YEAR FROM report_month)::INT as report_year,
     EXTRACT(QUARTER FROM report_month)::INT as report_quarter,
     insurance_type,
+    CASE insurance_type
+        WHEN 'Compulsory' THEN 'Обязательное'
+        WHEN 'Mandatory'  THEN 'Обязательное'
+        ELSE 'Добровольное'
+    END AS insurance_type_ru,
+    CASE insurance_type
+        WHEN 'Compulsory' THEN 'Мажбурий'
+        WHEN 'Mandatory'  THEN 'Мажбурий'
+        ELSE 'Ихтиёрий'
+    END AS insurance_type_uz_cyrl,
+    CASE insurance_type
+        WHEN 'Compulsory' THEN 'Majburiy'
+        WHEN 'Mandatory'  THEN 'Majburiy'
+        ELSE 'Ixtiyoriy'
+    END AS insurance_type_uz_latn,
     product_category,
     product_name,
     

@@ -8,19 +8,28 @@
 
 WITH monthly_settlement AS (
     SELECT
-        EXTRACT(YEAR FROM report_month)::INT as report_year,
-        EXTRACT(QUARTER FROM report_month)::INT as report_quarter,
+        EXTRACT(YEAR FROM report_month)::INT AS report_year,
+        EXTRACT(QUARTER FROM report_month)::INT AS report_quarter,
         report_month,
         insurance_type,
+        insurance_type_ru,
+        insurance_type_uz_cyrl,
+        insurance_type_uz_latn,
         product_category,
+        product_category_ru,
+        product_category_uz,
+        product_category_uz_latn,
         product_name,
-        ROUND(AVG(settlement_days)::NUMERIC, 2) as avg_settlement_days,
-        ROUND(MIN(settlement_days)::NUMERIC, 2) as min_settlement_days,
-        ROUND(MAX(settlement_days)::NUMERIC, 2) as max_settlement_days,
-        COUNT(claim_event_id) as total_claims_settled,
-        'Actual' as scenario
+        product_name_ru,
+        product_name_uz,
+        product_name_uz_latn,
+        ROUND(AVG(settlement_days)::NUMERIC, 2) AS avg_settlement_days,
+        ROUND(MIN(settlement_days)::NUMERIC, 2) AS min_settlement_days,
+        ROUND(MAX(settlement_days)::NUMERIC, 2) AS max_settlement_days,
+        COUNT(claim_event_id) AS total_claims_settled,
+        'Actual' AS scenario
     FROM {{ ref('curated_claims_settlement') }}
-    GROUP BY 1, 2, 3, 4, 5, 6
+    GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15
 )
 
 SELECT * FROM monthly_settlement

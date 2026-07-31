@@ -29,16 +29,24 @@ SELECT
     ev.event_created_date,
     ev.final_payout_date,
     DATE_TRUNC('month', ev.final_payout_date)::DATE as report_month,
-    
-    -- Calculate duration in whole days (Date subtraction in Postgres returns integer)
+
     (ev.final_payout_date - ev.event_created_date)::INT as settlement_days,
-    
-    -- Product Dimensions (LEFT JOIN to ensure we don't drop claims if metadata is missing)
-    CASE WHEN pt.mandatory = 1 THEN 'Mandatory' ELSE 'Voluntary' END as insurance_type,
-    COALESCE(v_cat.name3, 'Other') as product_category,
-    COALESCE(pt.polis_name, 'Other') as product_name
+
+    COALESCE(pd.insurance_type, 'Voluntary')              AS insurance_type,
+    COALESCE(pd.insurance_type_ru, 'Добровольное')        AS insurance_type_ru,
+    COALESCE(pd.insurance_type_uz_cyrl, 'Ихтиёрий')       AS insurance_type_uz_cyrl,
+    COALESCE(pd.insurance_type_uz_latn, 'Ixtiyoriy')      AS insurance_type_uz_latn,
+
+    COALESCE(pd.category, 'Other')                          AS product_category,
+    COALESCE(pd.category_ru, 'Other')                       AS product_category_ru,
+    COALESCE(pd.category_uz, 'Other')                       AS product_category_uz,
+    COALESCE(pd.category_uz_latn, 'Other')                  AS product_category_uz_latn,
+
+    COALESCE(pd.product_name, 'Other')                      AS product_name,
+    COALESCE(pd.product_name_ru, 'Other')                   AS product_name_ru,
+    COALESCE(pd.product_name_uz, 'Other')                   AS product_name_uz,
+    COALESCE(pd.product_name_uz_latn, 'Other')              AS product_name_uz_latn
 
 FROM event_viplati ev
 LEFT JOIN {{ source('raw', 'ins_anketa_oracle') }} a ON a.ins_id = ev.policy_anketa_id
-LEFT JOIN {{ source('raw', 'ins_pturi_oracle') }} pt ON pt.ins_id = a.ins_type
-LEFT JOIN {{ source('raw', 'ins_vertical_oracle') }} v_cat ON v_cat.ins_id = pt.vertical
+LEFT JOIN {{ ref('curated_product_dimension') }} pd ON pd.pturi_id = a.ins_type

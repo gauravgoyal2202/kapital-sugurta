@@ -25,7 +25,6 @@ snapshot-paths: ["snapshots"]
 
 
 
-
 models:
   kapital_sugurta_dbt:
     +materialized: view   # default (we’ll override below)
@@ -40,6 +39,10 @@ models:
   # Elementary stores its audit tables in a dedicated schema
   elementary:
     +schema: elementary
+
+seeds:
+  kapital_sugurta_dbt:
+    +schema: curated
 
 # 🔥 ADD THIS BLOCK (VERY IMPORTANT)
 dispatch:
