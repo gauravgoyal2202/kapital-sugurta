@@ -55,6 +55,7 @@ earned_detailed AS (
         COALESCE(div.sp_name2, 'Head Office')                             AS branch_name_uz,
         COALESCE(pd.product_name, 'Other')                                AS product_name,
         COALESCE(pd.product_name_uz, 'Other')                             AS product_name_uz,
+        a.ins_type                                                          AS product_id,
         COALESCE(pd.insurance_type, 'Voluntary')                          AS insurance_type,
         COALESCE(pd.category, 'Unclassified')                             AS product_category,
         COALESCE(pd.category_uz, 'Unclassified')                          AS product_category_uz
@@ -125,6 +126,7 @@ earned_calc_final AS (
         cf.period_start,
         cf.branch_name,
         cf.product_name,
+        cf.product_id,
         cf.insurance_type,
         cf.product_category,
         cf.earned_days,
@@ -139,6 +141,7 @@ SELECT
     period_start                                                          AS report_month,
     branch_name,
     product_name,
+    product_id,
     insurance_type,
     product_category,
     SUM(COALESCE(earned_premium, 0))                                    AS earned_premium_uzs,
@@ -150,5 +153,6 @@ GROUP BY
     period_start,
     branch_name,
     product_name,
+    product_id,
     insurance_type,
     product_category

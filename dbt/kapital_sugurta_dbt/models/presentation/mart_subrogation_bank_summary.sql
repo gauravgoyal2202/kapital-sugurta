@@ -173,6 +173,27 @@ base_data AS (
 SELECT
     COALESCE(curr.bank_partner_name, prev.bank_partner_name)           AS bank_name,
     COALESCE(curr.product_category, prev.product_category)             AS product_category,
+    CASE COALESCE(curr.product_category, prev.product_category)
+        WHEN 'Motor'    THEN 'Авто'
+        WHEN 'Banking'  THEN 'Банкинг'
+        WHEN 'Property' THEN 'Имущество'
+        WHEN 'Other'    THEN 'Прочее'
+        ELSE COALESCE(curr.product_category, prev.product_category)
+    END AS product_category_ru,
+    CASE COALESCE(curr.product_category, prev.product_category)
+        WHEN 'Motor'    THEN 'Авто'
+        WHEN 'Banking'  THEN 'Банк'
+        WHEN 'Property' THEN 'Мулк'
+        WHEN 'Other'    THEN 'Бошқа'
+        ELSE COALESCE(curr.product_category, prev.product_category)
+    END AS product_category_uz_cyrl,
+    CASE COALESCE(curr.product_category, prev.product_category)
+        WHEN 'Motor'    THEN 'Avto'
+        WHEN 'Banking'  THEN 'Bank'
+        WHEN 'Property' THEN 'Mulk'
+        WHEN 'Other'    THEN 'Boshqa'
+        ELSE COALESCE(curr.product_category, prev.product_category)
+    END AS product_category_uz_latn,
     COALESCE(curr.customer_segment, prev.customer_segment)             AS customer_segment,
     CASE COALESCE(curr.customer_segment, prev.customer_segment)
         WHEN 'Physical'  THEN 'Физическое лицо'

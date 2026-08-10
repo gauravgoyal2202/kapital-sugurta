@@ -41,9 +41,21 @@ SELECT
     ceded_earned_reinsurance_premium_uzs,
 
     claim_frequency,
-    avg_value_of_znl,
-    payment_to_znu_share,
-    actual_loss_ratio,
+    CASE
+        WHEN total_claimed_loss_uzs > 0
+        THEN ROUND((total_claimed_loss_uzs / NULLIF(total_events, 0))::NUMERIC, 4)
+        ELSE 0
+    END                                                                             AS avg_value_of_znl,
+    CASE
+        WHEN total_claimed_loss_uzs > 0
+        THEN ROUND((paid_amount_uzs / total_claimed_loss_uzs * 100)::NUMERIC, 4)
+        ELSE 0
+    END                                                                             AS payment_to_znu_share,
+    CASE
+        WHEN earned_premium_uzs > 0
+        THEN ROUND((paid_amount_uzs / earned_premium_uzs * 100)::NUMERIC, 4)
+        ELSE 0
+    END                                                                             AS actual_loss_ratio,
 
     validation_status,
 

@@ -10,7 +10,7 @@
   - insurance_subgroup:    Sub-grouping from ins_pgroup2_oracle
 
   Compulsory KOD_NUM list (per client): 3, 108, 123, 210, 211, 218, 401, 402, 418
-  All others = Voluntary
+  All other values (including NULL, blank, non-numeric) = Voluntary
 */
 
 SELECT
@@ -21,30 +21,10 @@ SELECT
     t.polis_name                                            AS product_name_uz_latn,
     t.kod_num::TEXT                                         AS product_code,
 
-    CASE
-        WHEN t.kod_num ~ '^[0-9]+$'
-         AND t.kod_num::INT IN (3, 108, 123, 210, 211, 218, 401, 402, 418)
-        THEN 'Compulsory'
-        ELSE 'Voluntary'
-    END                                                     AS insurance_type,
-    CASE
-        WHEN t.kod_num ~ '^[0-9]+$'
-         AND t.kod_num::INT IN (3, 108, 123, 210, 211, 218, 401, 402, 418)
-        THEN 'Обязательное'
-        ELSE 'Добровольное'
-    END                                                     AS insurance_type_ru,
-    CASE
-        WHEN t.kod_num ~ '^[0-9]+$'
-         AND t.kod_num::INT IN (3, 108, 123, 210, 211, 218, 401, 402, 418)
-        THEN 'Мажбурий'
-        ELSE 'Ихтиёрий'
-    END                                                     AS insurance_type_uz_cyrl,
-    CASE
-        WHEN t.kod_num ~ '^[0-9]+$'
-         AND t.kod_num::INT IN (3, 108, 123, 210, 211, 218, 401, 402, 418)
-        THEN 'Majburiy'
-        ELSE 'Ixtiyoriy'
-    END                                                     AS insurance_type_uz_latn,
+    {{ insurance_type_en('t.kod_num') }}                    AS insurance_type,
+    {{ insurance_type_ru_from_kod_num('t.kod_num') }}       AS insurance_type_ru,
+    {{ insurance_type_uz_cyrl_from_kod_num('t.kod_num') }}  AS insurance_type_uz_cyrl,
+    {{ insurance_type_uz_latn_from_kod_num('t.kod_num') }}  AS insurance_type_uz_latn,
 
     COALESCE(v.name1, 'Unclassified')                       AS category,
     COALESCE(v.name1, 'Unclassified')                       AS category_ru,

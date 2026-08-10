@@ -29,6 +29,7 @@ claims_base AS (
         COALESCE(div.sp_name2, 'Head Office')                               AS branch_name_uz,
         COALESCE(pd.product_name, 'Other')                                AS product_name,
         COALESCE(pd.product_name_uz, 'Other')                             AS product_name_uz,
+        a.ins_type                                                          AS product_id,
         COALESCE(pd.insurance_type, 'Voluntary')                          AS insurance_type,
         COALESCE(pd.category, 'Unclassified')                             AS product_category,
         COALESCE(pd.category_uz, 'Unclassified')                          AS product_category_uz,
@@ -89,6 +90,7 @@ SELECT
     DATE_TRUNC('month', sluch_date)::DATE                                  AS report_month,
     branch_name,
     product_name,
+    product_id,
     insurance_type,
     product_category,
     COUNT(DISTINCT sobitie_id)                                            AS total_events,
@@ -101,4 +103,4 @@ SELECT
       + SUM(CASE WHEN unpaid_claimed_loss_amount > 0
                  THEN unpaid_claimed_loss_amount ELSE 0 END)              AS incurred_claims_amount_uzs
 FROM claims_base
-GROUP BY 1, 2, 3, 4, 5
+GROUP BY 1, 2, 3, 4, 5, 6

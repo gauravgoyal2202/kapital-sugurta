@@ -6,8 +6,8 @@
 /*
   Profitability Dashboard — Forecast (Curated)
   --------------------------------------------
-  Year-wise portfolio forecast: one row per year from 2021 through the current
-  calendar year (extends automatically; no next-year preview row).
+  Year-wise portfolio forecast: one row per year from the current calendar
+  year through two years ahead (current + 2 years, three rows total).
 
   Client rules (Mirabbos, 2026):
     • Granularity: year-wise
@@ -42,8 +42,8 @@ WITH monthly AS (
 
 forecast_years AS (
     SELECT generate_series(
-        2021,
-        EXTRACT(YEAR FROM CURRENT_DATE)::INT
+        EXTRACT(YEAR FROM CURRENT_DATE)::INT,
+        EXTRACT(YEAR FROM CURRENT_DATE)::INT + 2
     )::INT                                                                  AS forecast_year
 ),
 

@@ -30,6 +30,7 @@ SELECT
     branch_name_uz,
     product_name,
     product_name_uz,
+    product_id,
     insurance_type,
     CASE insurance_type
         WHEN 'Compulsory' THEN 'Обязательное'

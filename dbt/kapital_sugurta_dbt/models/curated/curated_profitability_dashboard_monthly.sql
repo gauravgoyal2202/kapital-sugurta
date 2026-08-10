@@ -69,6 +69,7 @@ SELECT
             CASE WHEN COALESCE(c.total_claimed_loss_uzs, 0) > 0
                  THEN COALESCE(c.paid_amount_uzs, 0)::NUMERIC
                       / c.total_claimed_loss_uzs::NUMERIC
+                      * 100
                  ELSE 0::NUMERIC
             END
         )::NUMERIC, 4)                                                  AS payment_to_znu_share,
@@ -77,6 +78,7 @@ SELECT
             CASE WHEN COALESCE(e.earned_premium_uzs, 0) > 0
                  THEN COALESCE(c.paid_amount_uzs, 0)::NUMERIC
                       / e.earned_premium_uzs::NUMERIC
+                      * 100
                  ELSE 0::NUMERIC
             END
         )::NUMERIC, 4)                                                  AS actual_loss_ratio,

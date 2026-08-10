@@ -3,8 +3,16 @@
 WITH outgoing_base AS (
     SELECT
         DATE_TRUNC('month', premium_accrual_date)::DATE AS report_month,
-        COALESCE(NULLIF(TRIM(insurance_type), ''), 'Unknown') AS insurance_type,
-        COALESCE(NULLIF(TRIM(voluntary_insurance_type), ''), NULLIF(TRIM(mandatory_insurance_type), ''), 'N/A') AS category,
+        CASE
+            WHEN NULLIF(TRIM(mandatory_insurance_type::TEXT), '') IS NOT NULL
+             AND UPPER(TRIM(mandatory_insurance_type::TEXT)) NOT IN ('N/A', 'NA')
+            THEN 'Compulsory'
+            WHEN NULLIF(TRIM(voluntary_insurance_type::TEXT), '') IS NOT NULL
+             AND UPPER(TRIM(voluntary_insurance_type::TEXT)) NOT IN ('N/A', 'NA')
+            THEN 'Voluntary'
+            ELSE 'Voluntary'
+        END AS insurance_type,
+        COALESCE(NULLIF(TRIM(voluntary_insurance_type::TEXT), ''), NULLIF(TRIM(mandatory_insurance_type::TEXT), ''), 'N/A') AS category,
         COALESCE(NULLIF(TRIM(insurance_type), ''), 'Unknown') AS product,
         COALESCE(NULLIF(TRIM(reinsurer), ''), 'Unknown') AS reinsurer,
         SUM(total_accrued_premium_uzs) AS outgoing_volume_uzs
@@ -17,8 +25,16 @@ WITH outgoing_base AS (
 incoming_base AS (
     SELECT
         DATE_TRUNC('month', contract_conclusion_date)::DATE AS report_month,
-        COALESCE(NULLIF(TRIM(insurance_type), ''), 'Unknown') AS insurance_type,
-        COALESCE(NULLIF(TRIM(voluntary_insurance_type), ''), NULLIF(TRIM(mandatory_insurance_type), ''), 'N/A') AS category,
+        CASE
+            WHEN NULLIF(TRIM(mandatory_insurance_type::TEXT), '') IS NOT NULL
+             AND UPPER(TRIM(mandatory_insurance_type::TEXT)) NOT IN ('N/A', 'NA')
+            THEN 'Compulsory'
+            WHEN NULLIF(TRIM(voluntary_insurance_type::TEXT), '') IS NOT NULL
+             AND UPPER(TRIM(voluntary_insurance_type::TEXT)) NOT IN ('N/A', 'NA')
+            THEN 'Voluntary'
+            ELSE 'Voluntary'
+        END AS insurance_type,
+        COALESCE(NULLIF(TRIM(voluntary_insurance_type::TEXT), ''), NULLIF(TRIM(mandatory_insurance_type::TEXT), ''), 'N/A') AS category,
         COALESCE(NULLIF(TRIM(insurance_type), ''), 'Unknown') AS product,
         COALESCE(NULLIF(TRIM(policyholder), ''), 'Unknown') AS reinsurer,
         SUM(total_accrued_premium_uzs) AS incoming_volume_uzs
@@ -61,6 +77,21 @@ joined_data AS (
 SELECT
     report_month,
     insurance_type,
+    CASE insurance_type
+        WHEN 'Compulsory' THEN 'Обязательное'
+        WHEN 'Mandatory'  THEN 'Обязательное'
+        ELSE 'Добровольное'
+    END AS insurance_type_ru,
+    CASE insurance_type
+        WHEN 'Compulsory' THEN 'Мажбурий'
+        WHEN 'Mandatory'  THEN 'Мажбурий'
+        ELSE 'Ихтиёрий'
+    END AS insurance_type_uz_cyrl,
+    CASE insurance_type
+        WHEN 'Compulsory' THEN 'Majburiy'
+        WHEN 'Mandatory'  THEN 'Majburiy'
+        ELSE 'Ixtiyoriy'
+    END AS insurance_type_uz_latn,
     category,
     product,
     reinsurer,

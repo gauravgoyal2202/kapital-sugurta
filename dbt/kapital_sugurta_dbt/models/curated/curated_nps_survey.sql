@@ -9,7 +9,7 @@
 
 SELECT
     response_timestamp,
-    DATE_TRUNC('month', response_timestamp)::DATE as report_month,
+    DATE(response_timestamp) as report_month,
     nps_score_raw,
     comment_text,
     survey_type,

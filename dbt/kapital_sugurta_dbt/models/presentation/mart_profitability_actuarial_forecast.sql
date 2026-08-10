@@ -11,7 +11,7 @@
   -----------------------------------------
   Year-wise portfolio forecast for Power BI (no section split).
 
-  One row per year from 2021 through current calendar year (auto-extending).
+  One row per year: current calendar year through current + 2 years.
   Inputs computed dynamically in curated_profitability_dashboard_forecast.
 */
 
