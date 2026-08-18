@@ -102,7 +102,13 @@ customer_metrics AS (
     SELECT
         report_month,
         legal_form,
+        legal_form_ru,
+        legal_form_uz_cyrl,
+        legal_form_uz_latn,
         customer_segment,
+        customer_segment_ru,
+        customer_segment_uz_cyrl,
+        customer_segment_uz_latn,
         oked_industry_code,
         region_code,
         SUM(active_customers) AS active_customers,
@@ -117,7 +123,7 @@ customer_metrics AS (
                 / NULLIF(SUM(customers_at_start_of_period), 0)
         , 0.0001) AS churn_rate
     FROM {{ ref('mart_customer_base_summary') }}
-    GROUP BY 1, 2, 3, 4, 5
+    GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11
 ),
 
 -- Step 9: Company-level churn rate and totals for normalization
@@ -154,7 +160,13 @@ SELECT
 
     -- Added filter dimensions
     cs.legal_form,
+    cs.legal_form_ru,
+    cs.legal_form_uz_cyrl,
+    cs.legal_form_uz_latn,
     cs.customer_segment,
+    cs.customer_segment_ru,
+    cs.customer_segment_uz_cyrl,
+    cs.customer_segment_uz_latn,
     cs.oked_industry_code,
     cs.region_code,
 

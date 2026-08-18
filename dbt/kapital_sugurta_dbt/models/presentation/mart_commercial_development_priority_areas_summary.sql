@@ -60,6 +60,27 @@ SELECT
     report_year,
     report_quarter,
     priority_area,
+    CASE priority_area
+        WHEN 'Motor'    THEN 'Авто'
+        WHEN 'Banking'  THEN 'Банкинг'
+        WHEN 'Property' THEN 'Имущество'
+        WHEN 'Other'    THEN 'Прочее'
+        ELSE priority_area
+    END AS priority_area_ru,
+    CASE priority_area
+        WHEN 'Motor'    THEN 'Авто'
+        WHEN 'Banking'  THEN 'Банк'
+        WHEN 'Property' THEN 'Мулк'
+        WHEN 'Other'    THEN 'Бошқа'
+        ELSE priority_area
+    END AS priority_area_uz_cyrl,
+    CASE priority_area
+        WHEN 'Motor'    THEN 'Avto'
+        WHEN 'Banking'  THEN 'Bank'
+        WHEN 'Property' THEN 'Mulk'
+        WHEN 'Other'    THEN 'Boshqa'
+        ELSE priority_area
+    END AS priority_area_uz_latn,
     insurance_type,
     product_category,
     product_name,

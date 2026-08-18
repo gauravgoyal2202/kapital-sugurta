@@ -8,7 +8,7 @@
 
 WITH raw_nps AS (
     SELECT
-        DATE_TRUNC('month', response_timestamp)::DATE as report_month,
+        report_month,
         nps_score_raw,
         nps_category,
         comment_text,

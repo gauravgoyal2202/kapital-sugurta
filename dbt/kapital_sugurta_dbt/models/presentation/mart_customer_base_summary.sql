@@ -30,9 +30,17 @@ metrics AS (
         EXTRACT(QUARTER FROM report_month) AS report_quarter,
         
         COALESCE(legal_form, 'Unknown') AS legal_form,
+        COALESCE(legal_form_ru, 'Unknown') AS legal_form_ru,
+        COALESCE(legal_form_uz_cyrl, 'Unknown') AS legal_form_uz_cyrl,
+        COALESCE(legal_form_uz_latn, 'Unknown') AS legal_form_uz_latn,
         COALESCE(customer_segment, 'Unknown') AS customer_segment,
+        COALESCE(customer_segment_ru, 'Unknown') AS customer_segment_ru,
+        COALESCE(customer_segment_uz_cyrl, 'Unknown') AS customer_segment_uz_cyrl,
+        COALESCE(customer_segment_uz_latn, 'Unknown') AS customer_segment_uz_latn,
         COALESCE(oked_industry_code, 'Unknown') AS oked_industry_code,
         COALESCE(region_code, 'Unknown') AS region_code,
+        COALESCE(region_code_uz, 'Unknown') AS region_code_uz,
+        COALESCE(region_code_lat, 'Unknown') AS region_code_lat,
         
         'Actual' AS scenario,
         
@@ -52,7 +60,7 @@ metrics AS (
         ROUND((SUM(is_retained)::NUMERIC / NULLIF(SUM(was_active_prev), 0)) * 100, 2) AS retention_rate_pct
         
     FROM spine
-    GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9
+    GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18
 )
 
 SELECT

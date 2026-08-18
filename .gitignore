@@ -29,6 +29,8 @@ wheels/
 target/
 dbt_packages/
 logs/
+edr_target/
+dbt/kapital_sugurta_dbt/edr_target/
 
 # Environment Variables
 .env
@@ -39,6 +41,9 @@ Thumbs.db
 desktop.ini
 staging/
 Data Validation.xlsx
+Расчеты (Calculations)_Translated.xlsx
+docs/queries/
+docs/excels/
 updated_oracle_query.txt
 Mapped premium+comission+motivation+terminated.txt
 generate_handoff_doc.py

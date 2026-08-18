@@ -30,10 +30,14 @@ oracle_source AS (
         c.contract_issue_date,
         
         div.sp_name1 AS division_name,
+        div.sp_name2 AS division_name_uz,
         frm.name AS reinsurance_form_name,
+        frm.name_uz AS reinsurance_form_name_uz,
         typ.name AS reinsurance_type_name,
+        typ.name_uz AS reinsurance_type_name_uz,
         brk.name AS broker_name,
-        cur.sp_name1 AS currency_name
+        cur.sp_name1 AS currency_name,
+        cur.sp_name2 AS currency_name_uz
         
     FROM {{ source('raw', 'ins_reinsurance_oracle') }} r
     LEFT JOIN {{ source('raw', 'ins_reins_contract_oracle') }} c ON c.reinsurance_id = r.id

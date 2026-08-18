@@ -115,10 +115,43 @@ SELECT
         WHEN b.channels LIKE '% - API' AND b.channels NOT LIKE 'Website%' THEN 'API Partners'
         ELSE 'Other'
     END                                                             AS partner_category,
+    CASE
+        WHEN b.channels LIKE 'Banks%' THEN 'Банки'
+        WHEN b.channels LIKE 'Marketplace%' THEN 'Маркетплейсы'
+        WHEN b.channels LIKE '% - API' AND b.channels NOT LIKE 'Website%' THEN 'API-партнёры'
+        ELSE 'Прочее'
+    END                                                             AS partner_category_ru,
+    CASE
+        WHEN b.channels LIKE 'Banks%' THEN 'Банклар'
+        WHEN b.channels LIKE 'Marketplace%' THEN 'Маркетплейслар'
+        WHEN b.channels LIKE '% - API' AND b.channels NOT LIKE 'Website%' THEN 'API hamkorlar'
+        ELSE 'Бошқа'
+    END                                                             AS partner_category_uz_cyrl,
+    CASE
+        WHEN b.channels LIKE 'Banks%' THEN 'Banklar'
+        WHEN b.channels LIKE 'Marketplace%' THEN 'Marketpleyslar'
+        WHEN b.channels LIKE '% - API' AND b.channels NOT LIKE 'Website%' THEN 'API hamkorlar'
+        ELSE 'Boshqa'
+    END                                                             AS partner_category_uz_latn,
     CASE WHEN b.user_id IN (19202, 19588, 20322, 40791) THEN 'Yes' ELSE 'No' END AS is_anor_bank,
 
     -- ── Product dimensions ───────────────────────────────────────────────
     b.insurance_type,
+    CASE b.insurance_type
+        WHEN 'Compulsory' THEN 'Обязательное'
+        WHEN 'Mandatory'  THEN 'Обязательное'
+        ELSE 'Добровольное'
+    END AS insurance_type_ru,
+    CASE b.insurance_type
+        WHEN 'Compulsory' THEN 'Мажбурий'
+        WHEN 'Mandatory'  THEN 'Мажбурий'
+        ELSE 'Ихтиёрий'
+    END AS insurance_type_uz_cyrl,
+    CASE b.insurance_type
+        WHEN 'Compulsory' THEN 'Majburiy'
+        WHEN 'Mandatory'  THEN 'Majburiy'
+        ELSE 'Ixtiyoriy'
+    END AS insurance_type_uz_latn,
     b.product_category,
     b.product_name,
 

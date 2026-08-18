@@ -25,7 +25,7 @@ enriched AS (
         
         -- Filter Dimensions
         CASE WHEN pt.mandatory = 1 THEN 'Mandatory' ELSE 'Voluntary' END as insurance_type,
-        COALESCE(v.name3, 'Other') as product_category,
+        COALESCE(v.name3, 'Прочее') as product_category,
         COALESCE(pt.polis_name, 'Other') as product_name,
         CASE WHEN pb.user_id IN (19202, 19588, 20322, 40791) THEN 'Yes' ELSE 'No' END AS is_anor_bank,
         TRIM(COALESCE(u.tb_surname, '')) || ' ' || TRIM(COALESCE(u.tb_name, '')) as agent_name,

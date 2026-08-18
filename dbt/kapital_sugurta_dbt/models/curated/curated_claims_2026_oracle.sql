@@ -10,8 +10,10 @@
 SELECT
     vipl.ins_id::TEXT                                       AS record_id,
     COALESCE(div.sp_name1, 'Head Office')                   AS branch_name,
+    COALESCE(div.sp_name2, 'Head Office')                   AS branch_name_uz,
     COALESCE(prod.insurance_type, 'Voluntary')              AS insurance_type,
-    COALESCE(prod.product_name, 'Unclassified')              AS insurance_class,
+    COALESCE(prod.product_name, 'Unclassified')             AS insurance_class,
+    COALESCE(prod.product_name_uz, 'Unclassified')          AS insurance_class_uz,
     s.decision_date::DATE                                   AS incident_date,
     s.decision_date::DATE                                   AS settlement_decision_date,
     s.decision_date::DATE                                   AS payout_date,

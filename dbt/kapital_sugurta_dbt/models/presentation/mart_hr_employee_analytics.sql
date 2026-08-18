@@ -25,7 +25,8 @@ WITH months AS (
 dept_branch_spine AS (
     SELECT DISTINCT
         COALESCE(dept.name1, 'Unknown') AS department_name,
-        COALESCE(div.sp_name1, 'Head Office') AS branch_name
+        COALESCE(div.sp_name1, 'Head Office') AS branch_name,
+        COALESCE(div.sp_name2, 'Head Office') AS branch_name_uz
     FROM {{ source('raw', 'ins_employee_oracle') }} e
     LEFT JOIN {{ source('raw', 'ins_department_oracle') }} dept ON e.department_id = dept.ins_id
     LEFT JOIN {{ source('raw', 'sp_division_oracle') }} div ON e.division_id = div.sp_id
@@ -36,6 +37,7 @@ monthly_actions AS (
         DATE_TRUNC('month', e.post_date)::DATE AS report_month,
         COALESCE(dept.name1, 'Unknown') AS department_name,
         COALESCE(div.sp_name1, 'Head Office') AS branch_name,
+        COALESCE(div.sp_name2, 'Head Office') AS branch_name_uz,
         COUNT(CASE WHEN e.action = 0 THEN 1 END) AS hired_count,
         COUNT(CASE WHEN e.action = 2 THEN 1 END) AS fired_count,
         COUNT(CASE WHEN e.action = 1 THEN 1 END) AS reassigned_count
@@ -43,7 +45,7 @@ monthly_actions AS (
     LEFT JOIN {{ source('raw', 'ins_department_oracle') }} dept ON e.department_id = dept.ins_id
     LEFT JOIN {{ source('raw', 'sp_division_oracle') }} div ON e.division_id = div.sp_id
     WHERE e.post_date >= DATE '2021-01-01'
-    GROUP BY 1, 2, 3
+    GROUP BY 1, 2, 3, 4
 ),
 
 headcount_start AS (
@@ -51,6 +53,7 @@ headcount_start AS (
         m.month_start,
         COALESCE(dept.name1, 'Unknown') AS department_name,
         COALESCE(div.sp_name1, 'Head Office') AS branch_name,
+        COALESCE(div.sp_name2, 'Head Office') AS branch_name_uz,
         COUNT(*) AS headcount_start
     FROM months m
     JOIN (
@@ -73,7 +76,7 @@ headcount_start AS (
        AND x.action IN (0, 1)
     LEFT JOIN {{ source('raw', 'ins_department_oracle') }} dept ON x.department_id = dept.ins_id
     LEFT JOIN {{ source('raw', 'sp_division_oracle') }} div ON x.division_id = div.sp_id
-    GROUP BY 1, 2, 3
+    GROUP BY 1, 2, 3, 4
 ),
 
 headcount_end AS (
@@ -81,6 +84,7 @@ headcount_end AS (
         m.month_start,
         COALESCE(dept.name1, 'Unknown') AS department_name,
         COALESCE(div.sp_name1, 'Head Office') AS branch_name,
+        COALESCE(div.sp_name2, 'Head Office') AS branch_name_uz,
         COUNT(*) AS headcount_end
     FROM months m
     JOIN (
@@ -103,7 +107,7 @@ headcount_end AS (
        AND x.action IN (0, 1)
     LEFT JOIN {{ source('raw', 'ins_department_oracle') }} dept ON x.department_id = dept.ins_id
     LEFT JOIN {{ source('raw', 'sp_division_oracle') }} div ON x.division_id = div.sp_id
-    GROUP BY 1, 2, 3
+    GROUP BY 1, 2, 3, 4
 ),
 
 nps_data AS (
@@ -120,6 +124,7 @@ nps_data AS (
 SELECT
     m.month_start::DATE AS report_month,
     ds.branch_name,
+    ds.branch_name_uz,
     ds.department_name,
     COALESCE(ma.hired_count, 0) AS hired_count,
     COALESCE(ma.fired_count, 0) AS fired_count,

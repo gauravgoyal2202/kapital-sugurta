@@ -97,9 +97,36 @@ SELECT
     EXTRACT(QUARTER FROM report_month)::INT                             AS report_quarter,
 
     channels,
-    insurance_type,
-    product_category,
-    product_name,
+    CASE WHEN insurance_type = 'Call Center' THEN '' ELSE insurance_type END AS insurance_type,
+    CASE
+        WHEN insurance_type = 'Call Center' THEN ''
+        WHEN insurance_type = 'Compulsory' THEN 'Обязательное'
+        WHEN insurance_type = 'Mandatory'  THEN 'Обязательное'
+        ELSE 'Добровольное'
+    END AS insurance_type_ru,
+    CASE
+        WHEN insurance_type = 'Call Center' THEN ''
+        WHEN insurance_type = 'Compulsory' THEN 'Мажбурий'
+        WHEN insurance_type = 'Mandatory'  THEN 'Мажбурий'
+        ELSE 'Ихтиёрий'
+    END AS insurance_type_uz_cyrl,
+    CASE
+        WHEN insurance_type = 'Call Center' THEN ''
+        WHEN insurance_type = 'Compulsory' THEN 'Majburiy'
+        WHEN insurance_type = 'Mandatory'  THEN 'Majburiy'
+        ELSE 'Ixtiyoriy'
+    END AS insurance_type_uz_latn,
+    CASE
+        WHEN product_category IN (
+            'Call Center',
+            'GENERAL_INSURANCE',
+            'OSAGO',
+            'OSAGO – General Insurance',
+            'General Insurance'
+        ) THEN ''
+        ELSE product_category
+    END AS product_category,
+    CASE WHEN product_name = 'Call Center' THEN '' ELSE product_name END AS product_name,
 
     -- Raw metrics (UZS)
     premium_uzs,
