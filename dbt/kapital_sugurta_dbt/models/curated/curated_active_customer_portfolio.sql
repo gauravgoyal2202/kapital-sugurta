@@ -40,8 +40,7 @@ raw_active_policies AS (
     WHERE po.tb_status IN (2, 9, 10)
       AND po.tb_date_end IS NOT NULL
       AND po.tb_date_begin IS NOT NULL
-      -- Filter to prevent anomalies
-      AND po.tb_date_begin >= '2021-01-01' 
+      AND a.owner IS NOT NULL
 )
 
 SELECT 

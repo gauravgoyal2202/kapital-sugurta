@@ -1,5 +1,11 @@
 {{ config(materialized='table') }}
 
+/*
+  Insurance Operations — Monthly (Mart)
+  Actual: premiums / claims from operational curated models
+  Plan:   FM Excel consolidated insurance block (Jul 2025 – Dec 2028)
+*/
+
 WITH premium_agg AS (
     SELECT
         DATE_TRUNC('month', payment_date)::DATE AS report_month,
@@ -19,39 +25,58 @@ terminated_agg AS (
     GROUP BY 1, 2
 ),
 
--- Constructing a master timeline unifying all sub-domains
+plan_agg AS (
+    SELECT
+        month_start_date                                                        AS report_month,
+        scenario,
+        gross_direct_premium_uzs                                                AS insurance_premium_volume_uzs,
+        0::NUMERIC                                                              AS insurance_liabilities_volume_uzs,
+        paid_amount_uzs                                                         AS insurance_claims_volume_uzs,
+        actual_loss_ratio                                                       AS loss_ratio_pct,
+        0::NUMERIC                                                              AS terminated_contracts_volume_uzs
+    FROM {{ ref('curated_fm_plan_insurance_monthly') }}
+),
+
 time_spine AS (
     SELECT DISTINCT report_month, scenario FROM premium_agg
     UNION
     SELECT DISTINCT report_month, scenario FROM terminated_agg
     UNION
     SELECT DISTINCT report_month, scenario FROM {{ ref('mart_financial_ratios_monthly') }}
+    UNION
+    SELECT DISTINCT report_month, scenario FROM plan_agg
 )
 
 SELECT
     s.report_month,
     s.scenario,
-    
-    -- 1. Premium Volume
-    COALESCE(p.insurance_premium_volume_uzs, 0) AS insurance_premium_volume_uzs,
-    
-    -- 2. Claims Volume (Seamlessly joined from the centralized Ratios mart)
-    COALESCE(r.claims_payout, 0) AS insurance_claims_volume_uzs,
-    
-    -- 3. Loss Ratio % (Seamlessly joined from the centralized Ratios mart to avoid formula duplication)
-    COALESCE(r.loss_ratio_pct, 0) AS loss_ratio_pct,
-    
-    -- 4. Liabilities Volume
-    COALESCE(p.insurance_liabilities_volume_uzs, 0) AS insurance_liabilities_volume_uzs,
-    
-    -- 5. Terminated Contracts
-    COALESCE(t.terminated_contracts_volume_uzs, 0) AS terminated_contracts_volume_uzs
-    
+
+    COALESCE(p.insurance_premium_volume_uzs, pl.insurance_premium_volume_uzs, 0)
+        AS insurance_premium_volume_uzs,
+
+    COALESCE(pl.insurance_claims_volume_uzs, r.claims_payout, 0)
+        AS insurance_claims_volume_uzs,
+
+    COALESCE(pl.loss_ratio_pct, r.loss_ratio_pct, 0)
+        AS loss_ratio_pct,
+
+    COALESCE(p.insurance_liabilities_volume_uzs, pl.insurance_liabilities_volume_uzs, 0)
+        AS insurance_liabilities_volume_uzs,
+
+    COALESCE(t.terminated_contracts_volume_uzs, pl.terminated_contracts_volume_uzs, 0)
+        AS terminated_contracts_volume_uzs
+
 FROM time_spine s
-LEFT JOIN premium_agg p 
-    ON s.report_month = p.report_month AND s.scenario = p.scenario
-LEFT JOIN terminated_agg t 
-    ON s.report_month = t.report_month AND s.scenario = t.scenario
-LEFT JOIN {{ ref('mart_financial_ratios_monthly') }} r 
-    ON s.report_month = r.report_month AND s.scenario = r.scenario
+LEFT JOIN premium_agg p
+    ON s.report_month = p.report_month
+   AND s.scenario = p.scenario
+LEFT JOIN terminated_agg t
+    ON s.report_month = t.report_month
+   AND s.scenario = t.scenario
+LEFT JOIN plan_agg pl
+    ON s.report_month = pl.report_month
+   AND s.scenario = pl.scenario
+LEFT JOIN {{ ref('mart_financial_ratios_monthly') }} r
+    ON s.report_month = r.report_month
+   AND s.scenario = r.scenario
 ORDER BY s.report_month DESC, s.scenario ASC

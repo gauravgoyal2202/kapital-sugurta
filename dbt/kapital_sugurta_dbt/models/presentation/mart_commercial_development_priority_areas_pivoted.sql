@@ -21,6 +21,6 @@ SELECT
     mkt_prem_prev_year,
     mkt_prem_curr_year,
     company_market_share_pct,
-    'Actual' AS scenario
+    scenario
 FROM {{ ref('mart_commercial_development_priority_areas_base') }}
 ORDER BY report_month DESC, priority_area

@@ -7,14 +7,18 @@
 ) }}
 
 /*
-  Dashboard 16 — Optimized Retention Spine
+  Dashboard 16 — Retention Spine
   -----------------------------------------
-  Provides both the Numerator (is_retained) and the Denominator (was_active_prev_month)
-  to ensure Power BI matches the client's "Retention = Retained / Start of Period" logic.
+  Oracle-aligned definitions (validated against KAPITALDB direct queries):
+    Active customers        = distinct owners with any policy overlapping the month
+                              (month-trunc begin <= report_month <= month-trunc end)
+    Policies per customer   = distinct overlapping policies / active customers
+    Retention rate          = customers active on day 1 AND last day of the month
+                              / customers active on day 1 of the month
 */
 
 WITH customer_monthly_state AS (
-    SELECT 
+    SELECT
         report_month,
         customer_id,
         MAX(legal_form) AS legal_form,
@@ -30,24 +34,24 @@ WITH customer_monthly_state AS (
         MAX(region_code_uz) AS region_code_uz,
         MAX(region_code_lat) AS region_code_lat,
         COUNT(DISTINCT policy_id) AS active_policy_count,
-        
-        MAX(CASE 
-            WHEN exact_start_date <= report_month 
-             AND exact_end_date >= report_month 
-            THEN 1 ELSE 0 
+
+        MAX(CASE
+            WHEN exact_start_date <= report_month
+             AND exact_end_date >= report_month
+            THEN 1 ELSE 0
         END) AS active_on_first_day,
-        
-        MAX(CASE 
-            WHEN exact_start_date <= (report_month + INTERVAL '1 month' - INTERVAL '1 day')::DATE 
-             AND exact_end_date >= (report_month + INTERVAL '1 month' - INTERVAL '1 day')::DATE 
-            THEN 1 ELSE 0 
+
+        MAX(CASE
+            WHEN exact_start_date <= (report_month + INTERVAL '1 month' - INTERVAL '1 day')::DATE
+             AND exact_end_date >= (report_month + INTERVAL '1 month' - INTERVAL '1 day')::DATE
+            THEN 1 ELSE 0
         END) AS active_on_last_day
-        
+
     FROM {{ ref('curated_active_customer_portfolio') }}
     GROUP BY 1, 2
 )
 
-SELECT 
+SELECT
     report_month,
     customer_id,
     legal_form,
@@ -63,9 +67,11 @@ SELECT
     region_code_uz,
     region_code_lat,
     active_policy_count,
-    
     1 AS is_active_curr,
     active_on_first_day AS was_active_prev,
-    CASE WHEN active_on_first_day = 1 AND active_on_last_day = 1 THEN 1 ELSE 0 END AS is_retained
+    CASE
+        WHEN active_on_first_day = 1 AND active_on_last_day = 1 THEN 1
+        ELSE 0
+    END AS is_retained
 
 FROM customer_monthly_state

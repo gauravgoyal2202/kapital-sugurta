@@ -13,6 +13,7 @@ WITH base_data AS (
         report_month,
         report_year,
         EXTRACT(QUARTER FROM report_month)::INT AS report_quarter,
+        scenario,
         priority_area,
         insurance_type,
         product_category,
@@ -24,7 +25,7 @@ WITH base_data AS (
         SUM(co_ras) AS co_ras,
         SUM(co_premium - co_expenses - co_claims - co_fifty - co_ras) AS co_net_profit
     FROM {{ ref('mart_commercial_development_priority_areas_base') }}
-    GROUP BY 1, 2, 3, 4, 5, 6, 7
+    GROUP BY 1, 2, 3, 4, 5, 6, 7, 8
 ),
 
 calculations AS (
@@ -32,6 +33,7 @@ calculations AS (
         report_month,
         report_year,
         report_quarter,
+        scenario,
         priority_area,
         insurance_type,
         product_category,
@@ -42,8 +44,14 @@ calculations AS (
         co_net_profit AS company_net_profit_cy,
         
         -- PY metrics (12-month lag partitioned by dimensions)
-        COALESCE(LAG(co_premium, 12) OVER (PARTITION BY priority_area, insurance_type, product_category, product_name ORDER BY report_month), 0) AS company_premium_py,
-        COALESCE(LAG(co_net_profit, 12) OVER (PARTITION BY priority_area, insurance_type, product_category, product_name ORDER BY report_month), 0) AS company_net_profit_py,
+        COALESCE(LAG(co_premium, 12) OVER (
+            PARTITION BY scenario, priority_area, insurance_type, product_category, product_name
+            ORDER BY report_month
+        ), 0) AS company_premium_py,
+        COALESCE(LAG(co_net_profit, 12) OVER (
+            PARTITION BY scenario, priority_area, insurance_type, product_category, product_name
+            ORDER BY report_month
+        ), 0) AS company_net_profit_py,
         
         -- Profitability %
         CASE 
@@ -59,6 +67,7 @@ SELECT
     report_month,
     report_year,
     report_quarter,
+    scenario,
     priority_area,
     CASE priority_area
         WHEN 'Motor'    THEN 'Авто'
@@ -105,4 +114,4 @@ SELECT
     profitability_pct
 
 FROM calculations
-ORDER BY report_month DESC, priority_area, product_name
+ORDER BY report_month DESC, scenario, priority_area, product_name

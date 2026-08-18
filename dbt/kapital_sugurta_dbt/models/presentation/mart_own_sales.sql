@@ -86,6 +86,32 @@ combined AS (
     UNION ALL
     SELECT * FROM call_center
 
+),
+
+plan_sales AS (
+
+    SELECT
+        report_month,
+        channels,
+        insurance_type,
+        product_category,
+        product_name,
+        premium_uzs,
+        commission_uzs,
+        claims_uzs,
+        motivation_uzs,
+        terminated_uzs,
+        strah_summa_uzs
+    FROM {{ ref('curated_fm_plan_own_sales_monthly') }}
+
+),
+
+all_channels AS (
+
+    SELECT *, 'Actual'::TEXT AS scenario FROM combined
+    UNION ALL
+    SELECT *, 'Plan'::TEXT AS scenario FROM plan_sales
+
 )
 
 -- ──────────────────────────────────────────────
@@ -152,12 +178,13 @@ SELECT
         ELSE 0
     END                                                                 AS profitability_pct,
 
-    'Actual'                                                            AS scenario
+    scenario
 
-FROM combined
+FROM all_channels
 
 ORDER BY
     report_month DESC,
+    scenario,
     channels,
     insurance_type,
     product_category,

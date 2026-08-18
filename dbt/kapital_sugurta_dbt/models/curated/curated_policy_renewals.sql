@@ -9,9 +9,15 @@
 /*
   Curated Policy Renewals
   ------------------------------------
-  Aligned 100% with Oracle Logic:
-  - Materializes the self-join of raw.kontragent_report for high performance.
-  - Groups expired and renewed clients at the rekvezid level.
+  Source: raw.kontragent_report = Oracle KAPITALDB.KONTRAGENT_REPORT
+          (INS_POLIS status 2,9; client from PTURI.WHOM_SEND_ESF).
+
+  Grain: one expired anketa/policy.
+  is_renewed = 1 if the same rekvezid+fizyur has a later policy
+  (date_control > date_end) with a different series or number.
+
+  The validation sheet is physical persons only. Filter fizyur = 0
+  in mart_policy_renewal_indicators.
 */
 
 WITH base AS (

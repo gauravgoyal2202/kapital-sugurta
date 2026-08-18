@@ -12,6 +12,9 @@ sources:
       - name: reinsurance_incoming_portfolio
       - name: reinsurance_outgoing_portfolio
       - name: solvency_adequacy
+      - name: fm_plan_time_spine
+      - name: fm_plan_metrics
+      - name: fm_plan_initiatives
       - name: ins_invdep_oracle
       - name: ins_invloan_oracle
       - name: p_sp_currency_oracle

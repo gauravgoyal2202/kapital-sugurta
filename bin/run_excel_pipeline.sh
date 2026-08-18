@@ -213,9 +213,37 @@ if [[ $STEP4_EXIT -ne 0 ]]; then
 fi
 log "[Step 4] NPS extraction OK."
 
-# ── Step 5 : Market Share extraction (currently disabled) ─────────────────────
+# ── Step 5 : FM Plan extraction ───────────────────────────────────────────────
+# log "[Step 5] Running extract_fm_plan.py (FM Excel → raw.fm_plan_*)..."
+# STEP5_STDERR_FILE="$TMPDIR_ETL/step5_fm_plan.err"
+# "$PYTHON_BIN" src/extract/extract_fm_plan.py > >(tee -a "$LOG_FILE") 2>"$STEP5_STDERR_FILE"
+# STEP5_EXIT=$?
+# if [[ $STEP5_EXIT -ne 0 ]]; then
+#     log "Step 5 failed. Retrying in 10 seconds..."
+#     sleep 10
+#     > "$STEP5_STDERR_FILE"
+#     "$PYTHON_BIN" src/extract/extract_fm_plan.py > >(tee -a "$LOG_FILE") 2>"$STEP5_STDERR_FILE"
+#     STEP5_EXIT=$?
+# fi
+
+# STEP5_ERR=$(cat "$STEP5_STDERR_FILE")
+# if [[ $STEP5_EXIT -ne 0 ]]; then
+#     if [[ -z "$STEP5_ERR" ]]; then
+#         if [[ -f "logs/load_fm_plan.log" ]]; then
+#             STEP5_ERR=$(tail -n 25 logs/load_fm_plan.log)
+#         else
+#             STEP5_ERR="No stderr captured. Last log lines:\n$(tail -n 25 "$LOG_FILE")"
+#         fi
+#     fi
+#     send_alert "FM Plan Extraction" "$STEP5_ERR" \
+#         "Script"       "src/extract/extract_fm_plan.py" \
+#         "Target Table" "raw.fm_plan_metrics"
+# fi
+# log "[Step 5] FM plan extraction OK."
+
+# ── Step 6 : Market Share extraction (currently disabled) ─────────────────────
 # Uncomment the block below to re-enable market share extraction
-# log "[Step 5] Running extract_market_share.py..."
+# log "[Step 6] Running extract_market_share.py..."
 # STEP5_STDERR_FILE="$TMPDIR_ETL/step5_market.err"
 # python src/extract/extract_market_share.py > >(tee -a "$LOG_FILE") 2>"$STEP5_STDERR_FILE"
 # STEP5_EXIT=$?

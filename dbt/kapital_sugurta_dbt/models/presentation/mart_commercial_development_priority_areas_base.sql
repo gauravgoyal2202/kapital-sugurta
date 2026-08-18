@@ -103,9 +103,37 @@ SELECT
          AND m.mkt_prem_curr_year > 0
         THEN ROUND((ab.oplsum / m.mkt_prem_curr_year * 100)::NUMERIC, 2)
         ELSE NULL
-    END AS company_market_share_pct
+    END AS company_market_share_pct,
+
+    'Actual'::TEXT AS scenario
 
 FROM aggregated_base ab
 LEFT JOIN mkt_agg m ON m.priority_area = ab.priority_area
 LEFT JOIN {{ ref('curated_product_dimension') }} pd ON pd.pturi_id = ab.pturi_id
-ORDER BY ab.report_month DESC, ab.priority_area
+
+UNION ALL
+
+SELECT
+    p.report_month,
+    p.report_year,
+    p.priority_area,
+    p.insurance_type,
+    p.insurance_type_ru,
+    p.insurance_type_uz_cyrl,
+    p.insurance_type_uz_latn,
+    p.product_category,
+    p.product_name,
+    p.channels,
+    p.co_premium,
+    p.co_claims,
+    p.co_expenses,
+    p.co_fifty,
+    p.co_ras,
+    p.profitability_pct,
+    NULL::NUMERIC AS mkt_prem_prev_year,
+    NULL::NUMERIC AS mkt_prem_curr_year,
+    NULL::NUMERIC AS company_market_share_pct,
+    p.scenario
+FROM {{ ref('curated_fm_plan_commercial_initiatives_monthly') }} p
+
+ORDER BY report_month DESC, priority_area

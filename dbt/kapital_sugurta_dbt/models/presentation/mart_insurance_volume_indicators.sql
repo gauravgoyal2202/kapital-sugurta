@@ -30,6 +30,10 @@
 
   METRICS (CY = Current Month, PY = Same Month Prior Year):
     Premiums, Claims, Liabilities, Terminated Contracts
+
+  SCENARIO:
+    Actual — Oracle / operational data
+    Plan   — FM Excel product-group plan (Jul 2025 – Dec 2028), filter scenario = 'Plan'
 */
 
 -- ================================================================
@@ -181,7 +185,7 @@ company_with_claims AS (
 -- ================================================================
 -- SECTION 3: PAIRING CY AND PY  (same calendar month, prior year)
 -- ================================================================
-final_pairs AS (
+actual_final_pairs AS (
     SELECT
         COALESCE(cy.report_month, (py.report_month + INTERVAL '1 year')::DATE) AS report_month,
         COALESCE(cy.report_year, py.report_year + 1) AS report_year,
@@ -223,6 +227,121 @@ final_pairs AS (
         AND py.sales_channel   = cy.sales_channel
         AND py.partner_type    = cy.partner_type
         AND COALESCE(py.partner_name, '') = COALESCE(cy.partner_name, '')
+),
+
+-- ================================================================
+-- SECTION 3B: FM PLAN BY PRODUCT GROUP  (Jul 2025 – Dec 2028)
+-- ================================================================
+plan_base AS (
+    SELECT * FROM {{ ref('curated_fm_plan_product_monthly') }}
+),
+
+plan_final_pairs AS (
+    SELECT
+        COALESCE(cy.report_month, (py.report_month + INTERVAL '1 year')::DATE) AS report_month,
+        COALESCE(cy.report_year, py.report_year + 1) AS report_year,
+        COALESCE(cy.report_year - 1, py.report_year) AS prior_year,
+        COALESCE((cy.report_month - INTERVAL '1 year')::DATE, py.report_month) AS prior_year_month,
+        COALESCE(cy.insurance_type, py.insurance_type) AS insurance_type,
+        COALESCE(cy.insurance_type_ru, py.insurance_type_ru) AS insurance_type_ru,
+        COALESCE(cy.insurance_type_uz_cyrl, py.insurance_type_uz_cyrl) AS insurance_type_uz_cyrl,
+        COALESCE(cy.insurance_type_uz_latn, py.insurance_type_uz_latn) AS insurance_type_uz_latn,
+        COALESCE(cy.category, py.category) AS category,
+        COALESCE(cy.category_ru, py.category_ru) AS category_ru,
+        COALESCE(cy.category_uz, py.category_uz) AS category_uz,
+        COALESCE(cy.category_uz_latn, py.category_uz_latn) AS category_uz_latn,
+        COALESCE(cy.product_name, py.product_name) AS product_name,
+        COALESCE(cy.product_name_ru, py.product_name_ru) AS product_name_ru,
+        COALESCE(cy.product_name_uz, py.product_name_uz) AS product_name_uz,
+        COALESCE(cy.product_name_uz_latn, py.product_name_uz_latn) AS product_name_uz_latn,
+        COALESCE(cy.sales_channel, py.sales_channel) AS sales_channel,
+        COALESCE(cy.partner_type, py.partner_type) AS partner_type,
+        COALESCE(cy.partner_name, py.partner_name) AS partner_name,
+
+        cy.co_prem   AS co_prem_cy,
+        cy.co_liab   AS co_liab_cy,
+        cy.co_claims AS co_claims_cy,
+        cy.co_term   AS co_term_cy,
+
+        py.co_prem   AS co_prem_py,
+        py.co_liab   AS co_liab_py,
+        py.co_claims AS co_claims_py,
+        py.co_term   AS co_term_py
+    FROM plan_base cy
+    FULL OUTER JOIN plan_base py
+        ON  py.report_month    = (cy.report_month - INTERVAL '1 year')::DATE
+        AND py.insurance_type  = cy.insurance_type
+        AND py.category        = cy.category
+        AND py.product_name    = cy.product_name
+        AND py.sales_channel   = cy.sales_channel
+        AND py.partner_type    = cy.partner_type
+        AND COALESCE(py.partner_name, '') = COALESCE(cy.partner_name, '')
+),
+
+all_final_pairs AS (
+    SELECT
+        report_month,
+        report_year,
+        prior_year,
+        prior_year_month,
+        insurance_type,
+        insurance_type_ru,
+        insurance_type_uz_cyrl,
+        insurance_type_uz_latn,
+        category,
+        category_ru,
+        category_uz,
+        category_uz_latn,
+        product_name,
+        product_name_ru,
+        product_name_uz,
+        product_name_uz_latn,
+        sales_channel,
+        partner_type,
+        partner_name,
+        co_prem_cy,
+        co_liab_cy,
+        co_claims_cy,
+        co_term_cy,
+        co_prem_py,
+        co_liab_py,
+        co_claims_py,
+        co_term_py,
+        'Actual'::TEXT AS scenario
+    FROM actual_final_pairs
+
+    UNION ALL
+
+    SELECT
+        report_month,
+        report_year,
+        prior_year,
+        prior_year_month,
+        insurance_type,
+        insurance_type_ru,
+        insurance_type_uz_cyrl,
+        insurance_type_uz_latn,
+        category,
+        category_ru,
+        category_uz,
+        category_uz_latn,
+        product_name,
+        product_name_ru,
+        product_name_uz,
+        product_name_uz_latn,
+        sales_channel,
+        partner_type,
+        partner_name,
+        co_prem_cy,
+        co_liab_cy,
+        co_claims_cy,
+        co_term_cy,
+        co_prem_py,
+        co_liab_py,
+        co_claims_py,
+        co_term_py,
+        'Plan'::TEXT AS scenario
+    FROM plan_final_pairs
 )
 
 -- ================================================================
@@ -248,12 +367,13 @@ SELECT
     fp.sales_channel,
     fp.partner_type,
     fp.partner_name,
+    fp.scenario,
 
     -- PREMIUMS (CY & PY)
     ROUND(COALESCE(fp.co_prem_cy, 0)::NUMERIC, 2)   AS co_premium_volume_cy,
     ROUND(COALESCE(fp.co_prem_py, 0)::NUMERIC, 2)   AS co_premium_volume_py,
 
-    -- CLAIMS (CY & PY) -- matches KPI card exactly when summed
+    -- CLAIMS (CY & PY)
     ROUND(COALESCE(fp.co_claims_cy, 0)::NUMERIC, 2) AS co_claims_volume_cy,
     ROUND(COALESCE(fp.co_claims_py, 0)::NUMERIC, 2) AS co_claims_volume_py,
 
@@ -265,5 +385,5 @@ SELECT
     ROUND(COALESCE(fp.co_term_cy, 0)::NUMERIC, 2)   AS co_terminated_cy,
     ROUND(COALESCE(fp.co_term_py, 0)::NUMERIC, 2)   AS co_terminated_py
 
-FROM final_pairs fp
-ORDER BY fp.report_month DESC, fp.insurance_type, fp.category, fp.product_name
+FROM all_final_pairs fp
+ORDER BY fp.report_month DESC, fp.scenario, fp.insurance_type, fp.category, fp.product_name

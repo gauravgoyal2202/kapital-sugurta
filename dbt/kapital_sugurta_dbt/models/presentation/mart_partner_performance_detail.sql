@@ -1,19 +1,15 @@
-{{ config(materialized='table') }}
+{{ config(
+    materialized = 'table',
+    tags         = ['partner', 'performance', 'detail']
+) }}
 
 /*
   mart_partner_performance_detail
   ────────────────────────────────────────────────────────────────
-  Single flat table for dashboard table charts.
+  Actual only — Oracle user / channel / product grain.
+  No FM plan data (FM initiatives have no Oracle partner / user mapping).
 
-  Source : curated_partner_indicators_detail (has user_id in grain)
-  Enriched with:
-    • Partner info     — partner_id, partner_surname, partner_name,
-                         partner_full_name, partner_category
-    • channel_group    — Own Channels / Partner Channels / Agency Network
-    • Derived KPIs     — net_profit, loss_ratio, profitability,
-                         commission_ratio, premium_share
-
-  Grain: report_month × user_id × channels × insurance_type × product_category × product_name
+  Grain: report_month × user_id × channels × product
 */
 
 WITH base AS (
@@ -35,7 +31,6 @@ WITH base AS (
 
 ),
 
--- Partner name lookup
 partner_dim AS (
 
     SELECT
@@ -55,27 +50,48 @@ partner_dim AS (
 
 ),
 
--- Monthly company total for share calculation
 monthly_total AS (
 
     SELECT
         month,
         SUM(premium_uzs) AS total_premium_uzs
     FROM base
-    GROUP BY month
+    GROUP BY 1
+
+),
+
+enriched AS (
+
+    SELECT
+        b.month,
+        b.user_id,
+        b.channels,
+        b.insurance_type,
+        b.product_category,
+        b.product_name,
+        b.premium_uzs,
+        b.commission_uzs,
+        b.claims_uzs,
+        b.motivation_uzs,
+        b.terminated_uzs,
+        b.bank_name,
+        p.partner_id,
+        p.partner_surname,
+        p.partner_name,
+        p.partner_full_name AS dim_partner_full_name
+    FROM base b
+    LEFT JOIN partner_dim p
+        ON p.partner_id = b.user_id
 
 )
 
 SELECT
-    -- ── Time dimensions ──────────────────────────────────────────────────
     b.month                                                         AS report_month,
     EXTRACT(YEAR    FROM b.month)::INT                              AS report_year,
     EXTRACT(QUARTER FROM b.month)::INT                              AS report_quarter,
 
-    -- ── Channel dimensions ───────────────────────────────────────────────
     b.channels,
 
-    -- Own: In-House (all) + Website
     b.channels IN (
         'In-House - Agent - Not API',
         'In-House - Internal - API',
@@ -83,7 +99,6 @@ SELECT
         'Website - Internal - API'
     )                                                               AS is_own,
 
-    -- Agent: any channel with an Agent role
     b.channels IN (
         'Banks - Agent - API',
         'Banks - Agent - Not API',
@@ -91,7 +106,6 @@ SELECT
         'Marketplace - Agent - API'
     )                                                               AS is_agent,
 
-    -- Partner: Banks + Marketplace channels
     b.channels IN (
         'Banks - Agent - API',
         'Banks - Agent - Not API',
@@ -101,13 +115,13 @@ SELECT
         'Marketplace - Internal - API'
     )                                                               AS is_partner,
 
-    -- ── Partner info (from tb_users_oracle) ──────────────────────────────
-    p.partner_id,
-    p.partner_surname,
-    p.partner_name,
+    COALESCE(b.partner_id, 0)                                       AS partner_id,
+    COALESCE(b.partner_surname, '')                                 AS partner_surname,
+    COALESCE(b.partner_name, '')                                    AS partner_name,
     CASE
-        WHEN b.channels LIKE 'Banks%' THEN COALESCE(b.bank_name, p.partner_full_name)
-        ELSE p.partner_full_name
+        WHEN b.channels LIKE 'Banks%'
+        THEN COALESCE(b.bank_name, b.dim_partner_full_name)
+        ELSE b.dim_partner_full_name
     END                                                             AS partner_full_name,
     CASE
         WHEN b.channels LIKE 'Banks%' THEN 'Banks'
@@ -133,9 +147,12 @@ SELECT
         WHEN b.channels LIKE '% - API' AND b.channels NOT LIKE 'Website%' THEN 'API hamkorlar'
         ELSE 'Boshqa'
     END                                                             AS partner_category_uz_latn,
-    CASE WHEN b.user_id IN (19202, 19588, 20322, 40791) THEN 'Yes' ELSE 'No' END AS is_anor_bank,
+    CASE
+        WHEN b.user_id IN (19202, 19588, 20322, 40791)
+        THEN 'Yes'
+        ELSE 'No'
+    END                                                             AS is_anor_bank,
 
-    -- ── Product dimensions ───────────────────────────────────────────────
     b.insurance_type,
     CASE b.insurance_type
         WHEN 'Compulsory' THEN 'Обязательное'
@@ -155,98 +172,108 @@ SELECT
     b.product_category,
     b.product_name,
 
-    -- ── Financial metrics (UZS) ──────────────────────────────────────────
-    ROUND(b.premium_uzs::NUMERIC,       2)                          AS premium_cy,
-    ROUND(COALESCE(LAG(b.premium_uzs, 12) OVER (PARTITION BY b.user_id, b.channels, b.insurance_type, b.product_category, b.product_name ORDER BY b.month), 0)::NUMERIC, 2) AS premium_py,
-    ROUND(b.commission_uzs::NUMERIC,    2)                          AS commission_cy,
-    ROUND(COALESCE(LAG(b.commission_uzs, 12) OVER (PARTITION BY b.user_id, b.channels, b.insurance_type, b.product_category, b.product_name ORDER BY b.month), 0)::NUMERIC, 2) AS commission_py,
-    ROUND(b.claims_uzs::NUMERIC,        2)                          AS claims_uzs,
-    ROUND(b.motivation_uzs::NUMERIC,    2)                          AS motivation_uzs,
-    ROUND(b.terminated_uzs::NUMERIC,    2)                          AS terminated_uzs,
+    ROUND(b.premium_uzs::NUMERIC, 2)                                AS premium_cy,
+    ROUND(
+        COALESCE(
+            LAG(b.premium_uzs, 12) OVER (
+                PARTITION BY
+                    b.user_id,
+                    b.channels,
+                    b.insurance_type,
+                    b.product_category,
+                    b.product_name
+                ORDER BY b.month
+            ),
+            0
+        )::NUMERIC,
+        2
+    )                                                               AS premium_py,
+    ROUND(b.commission_uzs::NUMERIC, 2)                             AS commission_cy,
+    ROUND(
+        COALESCE(
+            LAG(b.commission_uzs, 12) OVER (
+                PARTITION BY
+                    b.user_id,
+                    b.channels,
+                    b.insurance_type,
+                    b.product_category,
+                    b.product_name
+                ORDER BY b.month
+            ),
+            0
+        )::NUMERIC,
+        2
+    )                                                               AS commission_py,
+    ROUND(b.claims_uzs::NUMERIC, 2)                                 AS claims_uzs,
+    ROUND(b.motivation_uzs::NUMERIC, 2)                               AS motivation_uzs,
+    ROUND(b.terminated_uzs::NUMERIC, 2)                               AS terminated_uzs,
 
-    -- Net Profit
     ROUND(
         (b.premium_uzs - b.commission_uzs - b.claims_uzs
-            - b.motivation_uzs - b.terminated_uzs)::NUMERIC, 2
+            - b.motivation_uzs - b.terminated_uzs)::NUMERIC,
+        2
     )                                                               AS net_profit_uzs,
 
-    -- ── KPI ratios ───────────────────────────────────────────────────────
-
-    -- Loss Ratio %
     CASE
         WHEN b.premium_uzs > 0
         THEN ROUND((b.claims_uzs / b.premium_uzs * 100)::NUMERIC, 2)
         ELSE 0
     END                                                             AS loss_ratio_pct,
 
-    -- Profitability %
     CASE
         WHEN b.premium_uzs > 0
         THEN ROUND(
                 ((b.premium_uzs - b.commission_uzs - b.claims_uzs - b.motivation_uzs - b.terminated_uzs)
-                  / b.premium_uzs * 100)::NUMERIC, 2)
+                  / b.premium_uzs * 100)::NUMERIC,
+                2
+            )
         ELSE 0
     END                                                             AS profitability_pct,
 
-    -- Commission Ratio %
     CASE
         WHEN b.premium_uzs > 0
         THEN ROUND((b.commission_uzs / b.premium_uzs * 100)::NUMERIC, 2)
         ELSE 0
     END                                                             AS commission_ratio_pct,
 
-    -- Premium Share %
     CASE
         WHEN mt.total_premium_uzs > 0
         THEN ROUND((b.premium_uzs / mt.total_premium_uzs * 100)::NUMERIC, 4)
         ELSE 0
     END                                                             AS premium_share_pct,
 
-    -- partner_type
     CASE
-        -- is_partner, is_own, is_agent are all true
         WHEN (b.channels IN ('Banks - Agent - API', 'Banks - Agent - Not API', 'In-House - Agent - Not API', 'Marketplace - Agent - API'))
          AND (b.channels IN ('In-House - Agent - Not API', 'In-House - Internal - API', 'In-House - Internal - Not API', 'Website - Internal - API'))
          AND (b.channels IN ('Banks - Agent - API', 'Banks - Agent - Not API', 'Banks - Internal - API', 'Banks - Internal - Not API', 'Marketplace - Agent - API', 'Marketplace - Internal - API'))
             THEN 'partner-own-agent'
-        -- is_own & is_agent are true
         WHEN (b.channels IN ('In-House - Agent - Not API', 'In-House - Internal - API', 'In-House - Internal - Not API', 'Website - Internal - API'))
          AND (b.channels IN ('Banks - Agent - API', 'Banks - Agent - Not API', 'In-House - Agent - Not API', 'Marketplace - Agent - API'))
             THEN 'own-agent'
-        -- is_partner & is_own are true
         WHEN (b.channels IN ('Banks - Agent - API', 'Banks - Agent - Not API', 'Banks - Internal - API', 'Banks - Internal - Not API', 'Marketplace - Agent - API', 'Marketplace - Internal - API'))
          AND (b.channels IN ('In-House - Agent - Not API', 'In-House - Internal - API', 'In-House - Internal - Not API', 'Website - Internal - API'))
             THEN 'partner-own'
-        -- is_partner & is_agent are true
         WHEN (b.channels IN ('Banks - Agent - API', 'Banks - Agent - Not API', 'Banks - Internal - API', 'Banks - Internal - Not API', 'Marketplace - Agent - API', 'Marketplace - Internal - API'))
          AND (b.channels IN ('Banks - Agent - API', 'Banks - Agent - Not API', 'In-House - Agent - Not API', 'Marketplace - Agent - API'))
             THEN 'partner-agent'
-        -- only is_partner
         WHEN (b.channels IN ('Banks - Agent - API', 'Banks - Agent - Not API', 'Banks - Internal - API', 'Banks - Internal - Not API', 'Marketplace - Agent - API', 'Marketplace - Internal - API'))
             THEN 'partner'
-        -- only is_own
         WHEN (b.channels IN ('In-House - Agent - Not API', 'In-House - Internal - API', 'In-House - Internal - Not API', 'Website - Internal - API'))
             THEN 'own'
-        -- only is_agent
         WHEN (b.channels IN ('Banks - Agent - API', 'Banks - Agent - Not API', 'In-House - Agent - Not API', 'Marketplace - Agent - API'))
             THEN 'agent'
         ELSE 'none'
     END                                                             AS partner_type,
 
-    'Actual'                                                        AS scenario
+    'Actual'::TEXT                                                  AS scenario
 
-FROM base b
-
-LEFT JOIN partner_dim p
-    ON p.partner_id = b.user_id
-
+FROM enriched b
 LEFT JOIN monthly_total mt
     ON mt.month = b.month
-
 ORDER BY
     b.month DESC,
     b.channels,
-    p.partner_full_name,
+    partner_full_name,
     b.insurance_type,
     b.product_category,
     b.product_name
