@@ -59,6 +59,9 @@ from src.extract.fm_plan_config import (
     BACKOFFICE_INITIATIVE_LAYOUT,
     BACKOFFICE_INITIATIVES_SECTION,
     BACKOFFICE_INITIATIVES_SHEET,
+    COEFFICIENTS_METRIC_ROWS,
+    COEFFICIENTS_SECTION,
+    COEFFICIENTS_SHEET,
     COMMERCIAL_INITIATIVE_LAYOUT,
     COMMERCIAL_INITIATIVES_SECTION,
     COMMERCIAL_INITIATIVES_SHEET,
@@ -85,9 +88,15 @@ TARGET_TABLE = "fm_plan_metrics"
 INITIATIVES_TABLE = "fm_plan_initiatives"
 SCHEMA = "raw"
 
-# Primary monthly time axis in FM sheets (cols P–BK, 0-indexed 16–62)
-DATA_COL_START = 16
-DATA_COL_END = 62
+# Monthly plan time axis on FM sheets (0-indexed openpyxl columns).
+# Excel mapping (1-based): V=22 … BK=63 → 0-index 21…62.
+#   P  (16) blank
+#   Q:U (17–21 / 0-idx 16–20) annual / historical periods — excluded
+#   V   (22 / 0-idx 21) first monthly plan period (Jul 2025)
+#   AB:AM (28–39 / 0-idx 27–38) 2026 monthly plan
+#   BK  (63 / 0-idx 62) last monthly plan column (Dec 2028)
+DATA_COL_START = 21  # Excel V
+DATA_COL_END = 62    # Excel BK
 
 # Consolidated company totals in sheet 'ФО' (1-based Excel rows)
 FO_SHEET = "ФО"
@@ -329,6 +338,17 @@ def extract_investment_metrics(excel_path: str, spine: pd.DataFrame) -> pd.DataF
         sheet_name=INVESTMENT_SHEET,
         section_name=INVESTMENT_SECTION,
         metric_rows=INVESTMENT_METRIC_ROWS,
+    )
+
+
+def extract_coefficient_metrics(excel_path: str, spine: pd.DataFrame) -> pd.DataFrame:
+    """Official plan ratios from sheet Коэффиценты (rows 82–86)."""
+    return extract_sheet_metrics(
+        excel_path,
+        spine,
+        sheet_name=COEFFICIENTS_SHEET,
+        section_name=COEFFICIENTS_SECTION,
+        metric_rows=COEFFICIENTS_METRIC_ROWS,
     )
 
 
@@ -620,6 +640,7 @@ def main() -> None:
         regulator_metrics = extract_regulator_metrics(excel_path, spine)
         investment_metrics = extract_investment_metrics(excel_path, spine)
         reserve_metrics = extract_reserve_metrics(excel_path, spine)
+        coefficient_metrics = extract_coefficient_metrics(excel_path, spine)
         initiatives = extract_all_initiatives(excel_path)
         metrics = pd.concat(
             [
@@ -628,6 +649,7 @@ def main() -> None:
                 regulator_metrics,
                 investment_metrics,
                 reserve_metrics,
+                coefficient_metrics,
             ],
             ignore_index=True,
         )

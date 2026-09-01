@@ -1,10 +1,24 @@
+/*
+  Financial KPIs — ROA / ROE
+  --------------------------
+  Actual and Plan both store ROA/ROE as percentage points (e.g. 3.44 = 3.44%),
+  not decimals (0.0344). Power BI should use the same number format for both
+  scenarios (no extra ×100 on one series only).
+*/
+
 SELECT
     fp.report_date,
     fp.net_profit,
     COALESCE(bs.total_assets_final, 0)                                              AS average_assets_a490,
     COALESCE(bs.equity, 0) + COALESCE(bs.retained_earnings, 0)                    AS average_equity,
-    fp.net_profit / NULLIF(bs.total_assets_final, 0)                                AS roa,
-    fp.net_profit / NULLIF(COALESCE(bs.equity, 0), 0)                               AS roe,
+    ROUND(
+        fp.net_profit / NULLIF(bs.total_assets_final, 0) * 100,
+        4
+    )                                                                               AS roa,
+    ROUND(
+        fp.net_profit / NULLIF(COALESCE(bs.equity, 0) + COALESCE(bs.retained_earnings, 0), 0) * 100,
+        4
+    )                                                                               AS roe,
     fp.scenario                                                                     AS scenario
 FROM {{ ref('curated_financial_performance') }} fp
 JOIN {{ ref('curated_balance_sheet') }} bs

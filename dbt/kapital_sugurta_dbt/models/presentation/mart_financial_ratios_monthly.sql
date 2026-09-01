@@ -7,13 +7,17 @@
   Financial Ratios — Monthly (Mart)
   ---------------------------------
   Actual: regulatory financial performance, balance sheet, claims, reinsurance.
-  Plan:   FM Excel consolidated block (Jul 2025 – Dec 2028), scenario = 'Plan'.
+  Plan:   FM sheet 'Коэффиценты' official coefficients (Jul 2025 – Dec 2028).
 
-  Plan notes:
-    • FM claims line combines payout + commission (same as profitability plan)
-    • No P590 / P610 reserve movement in FM consolidated block → 0
-    • Plan expense ratio uses period_expenses / net earned premium (no claims
-      subtraction — FM operating expenses are separate from the claims line)
+  Plan ratio definitions (client-confirmed):
+    loss_ratio_pct     ← Коэффиценты!82 only (NOT 82+83+84)
+    expense_ratio_pct  ← Коэффиценты!85 (управленческих и коммерческих расходов)
+                         Workbook name "Коэффициент расходов" is row 86 (= 82+83+84+85).
+                         Power BI: if the visual title is "Коэффициент расходов", bind
+                         total_expense_ratio_pct (row 86) instead and rename accordingly.
+    combined_ratio_pct ← loss_ratio_pct + expense_ratio_pct (82 + 85)
+    Extra Plan columns: commission_ratio_pct (83), cost_ratio_pct (84),
+                        total_expense_ratio_pct (86)
 */
 
 WITH claims_agg AS (
@@ -155,7 +159,11 @@ actual_kpi AS (
             COALESCE(fp.premium_f011, 0)
             + COALESCE(fp.premium_f013, 0)
             - COALESCE(fp.reinsurance_f012, 0)
-        ) - COALESCE(bs.p590_change, 0) AS denominator_net_earned_premium
+        ) - COALESCE(bs.p590_change, 0) AS denominator_net_earned_premium,
+
+        NULL::NUMERIC AS commission_ratio_pct,
+        NULL::NUMERIC AS cost_ratio_pct,
+        NULL::NUMERIC AS total_expense_ratio_pct
 
     FROM actual_months m
     LEFT JOIN claims_agg c
@@ -192,18 +200,68 @@ plan_kpi AS (
         i.ceded_earned_reinsurance_premium_uzs                                  AS outward_ceded_premium,
         i.gross_direct_premium_uzs                                              AS premium_written,
 
-        i.earned_premium_uzs - i.ceded_earned_reinsurance_premium_uzs           AS denominator_net_earned_premium
+        i.earned_premium_uzs - i.ceded_earned_reinsurance_premium_uzs           AS denominator_net_earned_premium,
+
+        r.commission_ratio_pct,
+        r.cost_ratio_pct,
+        r.total_expense_ratio_pct,
+
+        r.loss_ratio_pct                                                        AS plan_loss_ratio_pct,
+        r.mgmt_commercial_expense_ratio_pct                                     AS plan_expense_ratio_pct
 
     FROM {{ ref('curated_fm_plan_insurance_monthly') }} i
     LEFT JOIN {{ ref('curated_fm_plan_financial_monthly') }} f
         ON f.month_start_date = i.month_start_date
        AND f.scenario = i.scenario
+    LEFT JOIN {{ ref('curated_fm_plan_ratios_monthly') }} r
+        ON r.report_month = i.month_start_date
+       AND r.scenario = i.scenario
 ),
 
 final_kpi AS (
-    SELECT * FROM actual_kpi
+    SELECT
+        report_month,
+        scenario,
+        claims_payout,
+        p610_reserve,
+        premium_f011,
+        premium_f013,
+        reinsurance_f012,
+        p590_change,
+        expenses_f070,
+        expenses_f090,
+        outward_ceded_premium,
+        premium_written,
+        denominator_net_earned_premium,
+        commission_ratio_pct,
+        cost_ratio_pct,
+        total_expense_ratio_pct,
+        NULL::NUMERIC AS plan_loss_ratio_pct,
+        NULL::NUMERIC AS plan_expense_ratio_pct
+    FROM actual_kpi
+
     UNION ALL
-    SELECT * FROM plan_kpi
+
+    SELECT
+        report_month,
+        scenario,
+        claims_payout,
+        p610_reserve,
+        premium_f011,
+        premium_f013,
+        reinsurance_f012,
+        p590_change,
+        expenses_f070,
+        expenses_f090,
+        outward_ceded_premium,
+        premium_written,
+        denominator_net_earned_premium,
+        commission_ratio_pct,
+        cost_ratio_pct,
+        total_expense_ratio_pct,
+        plan_loss_ratio_pct,
+        plan_expense_ratio_pct
+    FROM plan_kpi
 )
 
 SELECT
@@ -211,27 +269,27 @@ SELECT
     scenario,
 
     CASE
+        WHEN scenario = 'Plan' THEN COALESCE(plan_loss_ratio_pct, 0)
         WHEN denominator_net_earned_premium = 0 THEN 0
         ELSE claims_payout / denominator_net_earned_premium * 100.0
     END AS loss_ratio_pct,
 
     CASE
+        WHEN scenario = 'Plan' THEN COALESCE(plan_expense_ratio_pct, 0)
         WHEN denominator_net_earned_premium = 0 THEN 0
-        WHEN scenario = 'Plan'
-        THEN expenses_f090 / denominator_net_earned_premium * 100.0
         ELSE (expenses_f070 + expenses_f090 - claims_payout) / denominator_net_earned_premium * 100.0
     END AS expense_ratio_pct,
 
     (
         CASE
+            WHEN scenario = 'Plan' THEN COALESCE(plan_loss_ratio_pct, 0)
             WHEN denominator_net_earned_premium = 0 THEN 0
             ELSE claims_payout / denominator_net_earned_premium * 100.0
         END
         +
         CASE
+            WHEN scenario = 'Plan' THEN COALESCE(plan_expense_ratio_pct, 0)
             WHEN denominator_net_earned_premium = 0 THEN 0
-            WHEN scenario = 'Plan'
-            THEN expenses_f090 / denominator_net_earned_premium * 100.0
             ELSE (expenses_f070 + expenses_f090 - claims_payout) / denominator_net_earned_premium * 100.0
         END
     ) AS combined_ratio_pct,
@@ -240,6 +298,10 @@ SELECT
         WHEN premium_written = 0 THEN 0
         ELSE outward_ceded_premium / premium_written * 100.0
     END AS reinsurance_level_pct,
+
+    commission_ratio_pct,
+    cost_ratio_pct,
+    total_expense_ratio_pct,
 
     claims_payout,
     p610_reserve,

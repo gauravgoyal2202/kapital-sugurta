@@ -1,19 +1,28 @@
 WITH date_bounds AS (
-    -- Dynamically find the earliest date in your raw data
-    SELECT 
+    SELECT
         MIN(deposit_start_date) AS min_date
     FROM {{ ref('curated_oracle_deposits') }}
 ),
 
+plan_horizon AS (
+    -- Include full FM plan months (through Dec 2028) so Plan-vs-Fact charts
+    -- are not truncated at the current Actual month.
+    SELECT
+        COALESCE(MAX(report_month), DATE '2028-12-31') AS max_plan_month
+    FROM {{ ref('curated_fm_plan_financial_monthly') }}
+),
+
 months AS (
-    -- Dynamically generate an end-of-month date spine starting from your earliest data up to current year.
-    -- This is required so PowerBI can display dynamic trend graphs across different historical months.
-    SELECT 
+    SELECT
         (DATE_TRUNC('month', dt) + INTERVAL '1 month' - INTERVAL '1 day')::DATE AS report_month
-    FROM date_bounds,
+    FROM date_bounds
+    CROSS JOIN plan_horizon,
     LATERAL generate_series(
-        DATE_TRUNC('month', min_date), 
-        (DATE_TRUNC('year', CURRENT_DATE) + INTERVAL '1 year' - INTERVAL '1 day')::DATE, 
+        DATE_TRUNC('month', min_date),
+        GREATEST(
+            (DATE_TRUNC('year', CURRENT_DATE) + INTERVAL '1 year' - INTERVAL '1 day')::DATE,
+            max_plan_month
+        ),
         INTERVAL '1 month'
     ) AS dt
 ),
@@ -111,14 +120,23 @@ actual_output AS (    SELECT
 ),
 
 plan_unnested AS (
-    SELECT report_month, 'Deposits'::TEXT AS portfolio_category, deposits_portfolio_uzs AS total_amount_uzs, interest_income_uzs AS total_income
+    -- Plan from FM sheet Инвестиция: portfolio 109:111, income 65:68
+    -- report_month = month-end (same grain as Actual deposits spine)
+    SELECT
+        report_month,
+        'Deposits'::TEXT AS portfolio_category,
+        deposits_portfolio_uzs AS total_amount_uzs,
+        interest_income_uzs AS total_income
     FROM {{ ref('curated_fm_plan_financial_monthly') }}
     UNION ALL
-    SELECT report_month, 'Bonds', securities_portfolio_uzs, 0::NUMERIC FROM {{ ref('curated_fm_plan_financial_monthly') }}
+    SELECT report_month, 'Bonds', securities_portfolio_uzs, 0::NUMERIC
+    FROM {{ ref('curated_fm_plan_financial_monthly') }}
     UNION ALL
-    SELECT report_month, 'Shares', 0::NUMERIC, dividend_income_uzs FROM {{ ref('curated_fm_plan_financial_monthly') }}
+    SELECT report_month, 'Shares', 0::NUMERIC, dividend_income_uzs
+    FROM {{ ref('curated_fm_plan_financial_monthly') }}
     UNION ALL
-    SELECT report_month, 'Other', 0::NUMERIC, 0::NUMERIC FROM {{ ref('curated_fm_plan_financial_monthly') }}
+    SELECT report_month, 'Other', 0::NUMERIC, 0::NUMERIC
+    FROM {{ ref('curated_fm_plan_financial_monthly') }}
 ),
 
 plan_output AS (

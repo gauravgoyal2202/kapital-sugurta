@@ -153,8 +153,9 @@ SELECT
     net_profit_uzs,
     own_funds_sources_uzs                                                         AS average_equity_uzs,
     total_assets_proxy_uzs                                                        AS average_assets_uzs,
-    net_profit_uzs / NULLIF(own_funds_sources_uzs, 0)                           AS roe,
-    net_profit_uzs / NULLIF(total_assets_proxy_uzs, 0)                          AS roa,
+    -- Store as percentage points (e.g. 3.44) to match Actual dashboard display
+    ROUND(net_profit_uzs / NULLIF(own_funds_sources_uzs, 0) * 100, 4)           AS roe,
+    ROUND(net_profit_uzs / NULLIF(total_assets_proxy_uzs, 0) * 100, 4)          AS roa,
 
     deposits_portfolio_uzs,
     securities_portfolio_uzs,

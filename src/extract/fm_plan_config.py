@@ -111,6 +111,24 @@ INVESTMENT_METRIC_ROWS: dict[int, str] = {
     111: "total_investment_portfolio",
 }
 
+# Sheet Коэффиценты — official plan ratio coefficients (decimals in Excel, e.g. 0.3675)
+# Row definitions (client-confirmed):
+#   82 loss_ratio                       — Коэффициент убыточности (USE for loss-ratio visual)
+#   83 commission_ratio                 — Коэффициент комиссионных
+#   84 cost_ratio                       — Коэффициент себестоимости
+#   85 mgmt_commercial_expense_ratio    — Коэффициент управленческих и коммерческих расходов
+#   86 total_expense_ratio              — Коэффициент расходов (= 82+83+84+85)
+# Do NOT use 82+83+84 as "loss ratio". Do NOT label row 85 as workbook "Коэффициент расходов".
+COEFFICIENTS_SHEET = "Коэффиценты"
+COEFFICIENTS_SECTION = "plan_ratios"
+COEFFICIENTS_METRIC_ROWS: dict[int, str] = {
+    82: "loss_ratio",
+    83: "commission_ratio",
+    84: "cost_ratio",
+    85: "mgmt_commercial_expense_ratio",
+    86: "total_expense_ratio",
+}
+
 # Phase 4 — initiative sheets (long-format, product × line item × month)
 COMMERCIAL_INITIATIVES_SHEET = "Коммерческие инициативы"
 COMMERCIAL_INITIATIVES_SECTION = "commercial_initiatives"
